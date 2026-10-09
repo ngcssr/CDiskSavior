@@ -9,7 +9,8 @@ use std::path::Path;
 ///
 /// 成功返回 Ok(())，失败返回可读错误信息。
 pub fn create_junction(link_path: &Path, target_path: &Path) -> Result<(), String> {
-    junction::create(link_path, target_path).map_err(|e| {
+    // junction crate 1.4.2: create(target, junction) — target=真实数据，junction=要创建的链接
+    junction::create(target_path, link_path).map_err(|e| {
         format!(
             "创建 Junction 失败：{} → {}: {}",
             link_path.display(),
@@ -20,9 +21,11 @@ pub fn create_junction(link_path: &Path, target_path: &Path) -> Result<(), Strin
 }
 
 /// 删除目录联接（仅删除链接本身，不影响目标数据）
+///
+/// 用 std::fs::remove_dir（RemoveDirectoryW），实测对 junction 只删链接本身。
+/// junction crate 的 delete 只清 reparse 属性、留空目录壳——不彻底。
 pub fn remove_junction(link_path: &Path) -> Result<(), String> {
-    // junction crate 的 delete 只移除链接本身
-    junction::delete(link_path).map_err(|e| {
+    std::fs::remove_dir(link_path).map_err(|e| {
         format!("删除 Junction 失败 {}: {}", link_path.display(), e)
     })
 }
@@ -59,9 +62,11 @@ mod tests {
     #[test]
     fn junction_create_remove_roundtrip() {
         let dir = std::env::temp_dir().join(format!("cdisk-jct-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir); // 清理前次残留
         let _ = fs::create_dir_all(&dir);
         let real = dir.join("real");
         let link = dir.join("link");
+        let _ = fs::remove_dir_all(&link); // 确保 link 不存在
         fs::create_dir_all(&real).unwrap();
         fs::write(real.join("data.txt"), "hello").unwrap();
 
@@ -88,9 +93,11 @@ mod tests {
     fn junction_with_spaces_and_ampersand() {
         // V8 场景：路径含空格与 &
         let dir = std::env::temp_dir().join(format!("cdisk-jct2-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir); // 清理前次残留
         let _ = fs::create_dir_all(&dir);
         let real = dir.join("My App & Data");
         let link = dir.join("Link To & Data");
+        let _ = fs::remove_dir_all(&link); // 确保 link 不存在
         fs::create_dir_all(&real).unwrap();
 
         create_junction(&link, &real).expect("含特殊字符路径的 Junction 应成功");
