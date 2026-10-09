@@ -3,6 +3,8 @@ mod commands;
 mod relocate_commands;
 mod relocate;
 mod scan;
+mod slim;
+mod slim_commands;
 mod state;
 
 // P1 骨架 + P2 M4 空间腾挪命令
@@ -52,7 +54,36 @@ pub fn run() {
             commands::repair_scan_service,
             commands::open_apps_settings,
             commands::set_always_on_top,
-            commands::open_recycle_bin
+            commands::open_recycle_bin,
+            // M5 系统瘦身（P5 实现）
+            slim_commands::get_system_slim_status,
+            slim_commands::enable_hibernation,
+            slim_commands::disable_hibernation,
+            slim_commands::cleanup_winsxs,
+            slim_commands::cleanup_winsxs_resetbase,
+            slim_commands::rebuild_search_index,
+            slim_commands::open_virtual_memory_settings,
+            slim_commands::open_storage_settings,
+            slim_commands::open_disk_cleanup,
+            slim_commands::scan_old_drivers,
+            slim_commands::delete_old_drivers,
+            slim_commands::restore_all_driver_backups,
+            slim_commands::open_driver_backup_dir,
+            slim_commands::scan_registry_redundancy,
+            slim_commands::delete_registry_entries,
+            slim_commands::open_registry_backup_dir,
+            slim_commands::scan_shell_icons,
+            slim_commands::remove_shell_icon,
+            slim_commands::restore_shell_icon,
+            slim_commands::unlock_shell_icon,
+            slim_commands::open_shell_icon_backup_dir,
+            slim_commands::open_shell_icon_log,
+            slim_commands::open_shell_icon_registry,
+            slim_commands::restart_explorer,
+            slim_commands::scan_context_menu,
+            slim_commands::delete_context_menu_entries,
+            slim_commands::scan_ai_model_assets,
+            slim_commands::delete_ai_model
         ])
         .setup(|_app| {
             // R8: 单实例互斥（第二个实例直接退出）
