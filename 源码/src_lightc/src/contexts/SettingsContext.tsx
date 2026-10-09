@@ -1,0 +1,178 @@
+// ============================================================================
+// 应用设置上下文 - 管理各种开关设置
+// ============================================================================
+
+import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react';
+import { APP_MODULE_META, DEFAULT_ACTIVE_MODULE_ID, DEFAULT_LAYOUT_MODE, type AppModuleId, type LayoutMode } from '../config/moduleMeta';
+import i18n, { type Language } from '../i18n';
+import { prepareWindowForLayout } from '../utils/windowLayout';
+
+/** 应用设置 */
+interface AppSettings {
+  /** 界面语言，手动选择并与其他应用设置一起持久化。 */
+  language: Language;
+  /** 首页布局模式：卡片式适合快速总览，页面式适合传统 PC 软件用户。 */
+  layoutMode: LayoutMode;
+  /** 页面式布局下当前激活的功能模块，保存在全局设置里用于切换后保持位置。 */
+  activeModuleId: AppModuleId;
+  /** 大目录分析深度 (2-4，默认 3) */
+  hotspotDepth: number;
+  /** 大目录大小阈值 MB (10-500，默认 50) */
+  hotspotSizeThreshold: number;
+  /** 深度扫描时是否忽略系统目录（默认 true，保持现有行为） */
+  hotspotIgnoreSystemDirs: boolean;
+  /** 大文件清理返回的最大文件数（默认 50） */
+  bigFilesScanLimit: number;
+  /**
+   * 垃圾清理「深度发现」扫描的目录递归层数（4-24，默认 16）。
+   * 调大能扫到更深的缓存目录，但每一层都会成倍增加要遍历的目录数，扫描明显变慢。
+   */
+  junkDeepScanDepth: number;
+  /** 磁盘变化分析最多展示变化目录数量（默认 300） */
+  diskGrowthMaxEntries: number;
+  /** 清理日志最多保留文件数（默认 10） */
+  cleanupLogRetention: number;
+}
+
+interface SettingsContextValue {
+  /** 当前设置 */
+  settings: AppSettings;
+  /** 更新设置 */
+  updateSettings: (updates: Partial<AppSettings>) => void;
+  /** 切换布局前协调窗口尺寸，避免侧边栏在窄窗口中挤压内容。 */
+  switchLayoutMode: (layoutMode: LayoutMode) => Promise<void>;
+  /** 防止设置弹窗在窗口调整期间重复触发布局切换。 */
+  isLayoutSwitching: boolean;
+}
+
+const SettingsContext = createContext<SettingsContextValue | null>(null);
+
+const STORAGE_KEY = 'c-cleanup-settings';
+const moduleIds = APP_MODULE_META.map(module => module.id);
+
+/** 默认设置 */
+const defaultSettings: AppSettings = {
+  language: 'zh',
+  layoutMode: DEFAULT_LAYOUT_MODE, // 布局设置：默认侧边栏模式（可在通用设置里切换为卡片/页面模式）
+  activeModuleId: DEFAULT_ACTIVE_MODULE_ID,
+  hotspotDepth: 3,     // 默认分析深度 3 层
+  hotspotSizeThreshold: 50, // 默认 50MB
+  hotspotIgnoreSystemDirs: true, // 默认忽略系统目录
+  bigFilesScanLimit: 50, // 默认扫描 50 个大文件，避免初次结果列表过长
+  // 比原先写死的 12 层放宽一档：深度扫描本来就是为了找藏得深的缓存，太浅会漏。
+  // 上限留到 24，用户嫌慢可以自己调回去。
+  junkDeepScanDepth: 16,
+  diskGrowthMaxEntries: 300, // 默认最多展示 300 个变化目录
+  cleanupLogRetention: 10, // 默认保留 10 份清理日志，兼容历史行为
+};
+
+function normalizeSettings(settings: AppSettings): AppSettings {
+  const language: Language =
+    settings.language === 'en' || settings.language === 'ja' || settings.language === 'zh-TW' ? settings.language : 'zh';
+  const layoutMode: LayoutMode = settings.layoutMode === 'pages' || settings.layoutMode === 'sidebar'
+    ? settings.layoutMode
+    : settings.layoutMode === 'cards'
+      ? 'cards'
+      : DEFAULT_LAYOUT_MODE;
+  const activeModuleId = moduleIds.includes(settings.activeModuleId)
+    ? settings.activeModuleId
+    : DEFAULT_ACTIVE_MODULE_ID;
+
+  return {
+    ...settings,
+    language,
+    // 布局设置来自本地缓存，读取时收敛到已注册模块，避免旧缓存或手动篡改导致空页面。
+    layoutMode,
+    activeModuleId,
+    // 这些设置会直接影响扫描结果数量，读取本地缓存时做边界收敛，避免手动篡改导致 UI 或后端压力异常。
+    hotspotDepth: Math.min(4, Math.max(2, Number(settings.hotspotDepth) || defaultSettings.hotspotDepth)),
+    hotspotSizeThreshold: Math.min(500, Math.max(10, Number(settings.hotspotSizeThreshold) || defaultSettings.hotspotSizeThreshold)),
+    bigFilesScanLimit: Math.min(500, Math.max(10, Math.floor(Number(settings.bigFilesScanLimit) || defaultSettings.bigFilesScanLimit))),
+    junkDeepScanDepth: Math.min(24, Math.max(4, Math.floor(Number(settings.junkDeepScanDepth) || defaultSettings.junkDeepScanDepth))),
+    diskGrowthMaxEntries: Math.min(1000, Math.max(50, Number(settings.diskGrowthMaxEntries) || defaultSettings.diskGrowthMaxEntries)),
+    cleanupLogRetention: Math.min(100, Math.max(1, Math.floor(Number(settings.cleanupLogRetention) || defaultSettings.cleanupLogRetention))),
+  };
+}
+
+interface SettingsProviderProps {
+  children: ReactNode;
+}
+
+export function SettingsProvider({ children }: SettingsProviderProps) {
+  // 从 localStorage 读取保存的设置
+  const [settings, setSettings] = useState<AppSettings>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          return normalizeSettings({ ...defaultSettings, ...JSON.parse(saved) });
+        }
+      } catch (e) {
+        console.error('读取设置失败:', e);
+      }
+    }
+    return defaultSettings;
+  });
+  const [isLayoutSwitching, setIsLayoutSwitching] = useState(false);
+  const layoutSwitchRequestRef = useRef(0);
+  const layoutSwitchInProgressRef = useRef(false);
+
+  useEffect(() => {
+    // 设置可能来自旧版本缓存，统一在 Provider 生效后切换，避免首屏读取到非法语言。
+    void i18n.changeLanguage(settings.language);
+  }, [settings.language]);
+
+  // 更新设置
+  const updateSettings = useCallback((updates: Partial<AppSettings>) => {
+    setSettings(prev => {
+      const newSettings = normalizeSettings({ ...prev, ...updates });
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(newSettings));
+      return newSettings;
+    });
+  }, []);
+
+  const switchLayoutMode = useCallback(async (layoutMode: LayoutMode) => {
+    if (layoutMode === settings.layoutMode || layoutSwitchInProgressRef.current) return;
+
+    layoutSwitchInProgressRef.current = true;
+    const requestId = layoutSwitchRequestRef.current + 1;
+    layoutSwitchRequestRef.current = requestId;
+    setIsLayoutSwitching(true);
+
+    try {
+      await prepareWindowForLayout(layoutMode);
+      if (layoutSwitchRequestRef.current !== requestId) return;
+
+      updateSettings({ layoutMode });
+      // 保留至少一帧的切换阶段，让窗口扩展和内容重排在同一轮视觉更新中完成。
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    } catch (error) {
+      try {
+        // 窗口扩展部分失败时恢复原模式的最小尺寸，避免留下与界面状态不一致的约束。
+        await prepareWindowForLayout(settings.layoutMode);
+      } catch (rollbackError) {
+        console.error('回滚布局窗口约束失败:', rollbackError);
+      }
+      throw error;
+    } finally {
+      if (layoutSwitchRequestRef.current === requestId) {
+        setIsLayoutSwitching(false);
+      }
+      layoutSwitchInProgressRef.current = false;
+    }
+  }, [settings.layoutMode, updateSettings]);
+
+  return (
+    <SettingsContext.Provider value={{ settings, updateSettings, switchLayoutMode, isLayoutSwitching }}>
+      {children}
+    </SettingsContext.Provider>
+  );
+}
+
+export function useSettings(): SettingsContextValue {
+  const context = useContext(SettingsContext);
+  if (!context) {
+    throw new Error('useSettings 必须在 SettingsProvider 内部使用');
+  }
+  return context;
+}

@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LightC</title>
+    <style>
+      /* React 和业务 CSS 加载前先提供可见启动画面，避免主窗口显示白色空文档。 */
+      html,
+      body,
+      #root {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+      }
+
+      body {
+        background: #0d1512;
+        font-family: "Segoe UI", Inter, system-ui, sans-serif;
+      }
+
+      html[data-splash-theme="light"] body {
+        background: #f4faf6;
+      }
+
+      #initial-splash {
+        --splash-base: #0d1512;
+        --splash-gradient-start: #112b21;
+        --splash-gradient-end: #131d37;
+        --splash-orb-one: rgba(7, 193, 96, 0.22);
+        --splash-orb-two: rgba(73, 118, 255, 0.18);
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        isolation: isolate;
+        background: linear-gradient(135deg, var(--splash-base), var(--splash-gradient-start), var(--splash-gradient-end), var(--splash-base));
+      }
+
+      html[data-splash-theme="light"] #initial-splash {
+        --splash-base: #f4faf6;
+        --splash-gradient-start: #e5f7eb;
+        --splash-gradient-end: #edf3ff;
+        --splash-orb-one: rgba(7, 193, 96, 0.18);
+        --splash-orb-two: rgba(71, 133, 255, 0.14);
+      }
+
+      #initial-splash .splash-screen__aurora {
+        position: absolute;
+        z-index: -1;
+        width: 38vw;
+        height: 38vw;
+        min-width: 260px;
+        min-height: 260px;
+        border-radius: 9999px;
+        pointer-events: none;
+        background: radial-gradient(circle, var(--splash-orb-color) 0%, transparent 70%);
+        will-change: transform;
+      }
+
+      #initial-splash .splash-screen__aurora--one {
+        top: -18%;
+        left: -10%;
+        --splash-orb-color: var(--splash-orb-one);
+        animation: splash-orbit-one 9s ease-in-out infinite alternate;
+      }
+
+      #initial-splash .splash-screen__aurora--two {
+        right: -12%;
+        bottom: -20%;
+        --splash-orb-color: var(--splash-orb-two);
+        animation: splash-orbit-two 11s ease-in-out infinite alternate;
+      }
+
+      #initial-splash .splash-screen__content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        /* 与 React 启动屏保持一致，避免接管前后内容位置跳动。 */
+        gap: 14px;
+      }
+
+      #initial-splash .splash-screen__logo {
+        width: 104px;
+        height: 104px;
+        object-fit: contain;
+        filter: drop-shadow(0 14px 28px rgba(7, 193, 96, 0.24));
+        animation: splash-logo-in 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+      }
+
+      #initial-splash .splash-screen__slogan {
+        /* 清除 p 默认外边距，避免静态首屏的标语额外撑开内容区。 */
+        margin: 0;
+        color: rgba(255, 255, 255, 0.88);
+        font-size: 15px;
+        font-weight: 600;
+        text-align: center;
+        animation: splash-platform-in 520ms 80ms ease-out both;
+      }
+
+      html[data-splash-theme="light"] #initial-splash .splash-screen__slogan {
+        color: rgba(31, 41, 35, 0.88);
+      }
+
+      #initial-splash .splash-screen__platform {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 3px;
+        color: rgba(255, 255, 255, 0.58);
+        animation: splash-platform-in 520ms 160ms ease-out both;
+      }
+
+      html[data-splash-theme="light"] #initial-splash .splash-screen__platform {
+        color: rgba(31, 41, 35, 0.58);
+      }
+
+      #initial-splash .splash-screen__author {
+        color: rgba(255, 255, 255, 0.88);
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+      }
+
+      html[data-splash-theme="light"] #initial-splash .splash-screen__author {
+        color: rgba(31, 41, 35, 0.88);
+      }
+
+      #initial-splash .splash-screen__channel {
+        font-size: 11px;
+        letter-spacing: 0.03em;
+      }
+
+      @keyframes splash-orbit-one {
+        from { transform: translate3d(0, 0, 0) scale(1); }
+        to { transform: translate3d(12vw, 8vh, 0) scale(1.12); }
+      }
+
+      @keyframes splash-orbit-two {
+        from { transform: translate3d(0, 0, 0) scale(1); }
+        to { transform: translate3d(-10vw, -7vh, 0) scale(1.14); }
+      }
+
+      @keyframes splash-logo-in {
+        from { opacity: 0; transform: translateY(8px) scale(0.94); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+      }
+
+      @keyframes splash-platform-in {
+        from { opacity: 0; transform: translateY(6px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #initial-splash .splash-screen__aurora,
+        #initial-splash .splash-screen__logo,
+        #initial-splash .splash-screen__platform {
+          animation: none;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script>
+      // 启动屏由脚本注入，而不是写成静态 HTML。
+      //
+      // 中文说明：静态标记在 index.html 里必然带缩进，解析后会在标签之间产生空白文本节点，
+      // 而 React 的 SplashScreen 渲染出的子树没有这些空白节点；hydrateRoot 接管 #root 时
+      // 就会报 "Hydration failed ... {"\n      "}"。这里用字符串拼接出与 React 完全一致的
+      // 节点结构（不含元素间空白），既保留首帧零闪烁，也不再触发 hydration 报错。
+      (() => {
+        const SLOGANS = {
+          zh: "LightC，让磁盘优化更简单",
+          "zh-TW": "LightC，讓磁碟最佳化更簡單",
+          en: "LightC — making disk optimization simpler",
+          ja: "LightC — ディスク最適化をもっとシンプルに"
+        };
+
+        // 与 src/i18n/index.ts 的 getInitialLanguage 保持同一判定，避免标语语言不一致。
+        let language = "zh";
+        let theme = "dark";
+        try {
+          const settings = JSON.parse(localStorage.getItem("c-cleanup-settings") || "{}");
+          language = settings.language === "en" || settings.language === "ja" || settings.language === "zh-TW"
+            ? settings.language
+            : "zh";
+          // 与 ThemeContext 同一判定：light / dark / system(跟随系统)。
+          const mode = localStorage.getItem("c-cleanup-theme");
+          theme = mode === "light"
+            ? "light"
+            : mode === "system"
+              ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+              : "dark";
+        } catch {
+          // localStorage 不可用时使用与应用一致的默认值（深色 + 中文）。
+        }
+
+        // 主题与语言提前写到 html 上，index.html 里的样式选择器仍按这两个值工作。
+        document.documentElement.dataset.splashTheme = theme;
+        document.documentElement.dataset.splashLanguage = language;
+        document.documentElement.dataset.splashStartedAt = String(performance.now());
+
+        const markup = '<div id="initial-splash" class="splash-screen splash-screen--' + theme + '" role="status" aria-label="LightC">'
+          + '<div class="splash-screen__aurora splash-screen__aurora--one" aria-hidden="true"></div>'
+          + '<div class="splash-screen__aurora splash-screen__aurora--two" aria-hidden="true"></div>'
+          + '<div class="splash-screen__content">'
+          + '<img class="splash-screen__logo" src="/logo.svg" alt="LightC">'
+          + '<p id="splash-slogan" class="splash-screen__slogan">' + (SLOGANS[language] || SLOGANS.zh) + '</p>'
+          + '<div class="splash-screen__platform" aria-label="Evan的像素空间">'
+          + '<span class="splash-screen__channel">Bilibili · @Evan的像素空间</span>'
+          + '</div></div></div>';
+
+        document.getElementById("root").innerHTML = markup;
+      })();
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

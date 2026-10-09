@@ -1,0 +1,123 @@
+LightC Source Available License v1.0
+
+Copyright (c) 2026 Evan Lau.
+All rights reserved except as expressly granted under this License.
+
+This LightC Source Available License v1.0 (the "License") governs use of the
+LightC software, source code, object code, documentation, assets, build scripts,
+and related materials made available by Evan Lau (the "Licensor") under this
+License (collectively, the "Software").
+
+By accessing, copying, modifying, or using the Software, you accept this License.
+If you do not accept this License, you may not use the Software.
+
+1. License Grant
+
+Subject to the terms and conditions of this License, the Licensor grants you a
+limited, worldwide, royalty-free, non-exclusive, non-transferable license to:
+
+(a) view, inspect, and study the Software;
+(b) copy and run the Software for personal, educational, security review,
+    research, evaluation, or non-commercial development purposes;
+(c) modify the Software for personal, educational, security review, research,
+    evaluation, or non-commercial development purposes;
+(d) create and maintain public or private forks of the Software solely for
+    studying the Software, preparing changes, or submitting contributions to
+    the official LightC repository; and
+(e) submit patches, issues, and pull requests to the official LightC repository.
+
+2. Restrictions
+
+You may not, without the Licensor's prior written permission:
+
+(a) sell, rent, lease, sublicense, host, or otherwise commercialize the Software
+    or any modified version of the Software;
+(b) distribute, publish, release, or make available any modified version of the
+    Software as a standalone product, competing product, renamed product, or
+    replacement for LightC;
+(c) distribute compiled binaries, installers, portable packages, app bundles, or
+    other executable forms of the Software or any modified version, except as
+    part of a pull request or contribution workflow directed to the official
+    LightC repository;
+(d) include the Software or any substantial portion of the Software in a
+    commercial product, paid service, bundled offering, managed service, or
+    proprietary distribution;
+(e) remove, alter, hide, or obscure copyright notices, license notices, author
+    attribution, trademark notices, source attribution, or security and
+    authenticity notices included with the Software;
+(f) use the names "LightC", "Evan Lau", "Evan的像素空间", associated logos, or
+    other project branding to endorse or promote any modified or unofficial
+    version; or
+(g) use the Software in any way that violates applicable law or this License.
+
+3. Contributions
+
+If you submit a contribution to the official LightC repository, you represent
+that you have the right to submit it and that you license the contribution to
+the Licensor under terms sufficient for the Licensor to use, reproduce, modify,
+distribute, sublicense, relicense, and otherwise exploit the contribution as
+part of LightC, including in future open source, source available, commercial,
+Pro, Enterprise, or proprietary versions of LightC.
+
+Submitting a contribution does not grant you ownership of LightC or any right
+to distribute modified versions except as expressly permitted by this License.
+
+4. Official Builds and Distribution
+
+Only builds, installers, portable packages, releases, update metadata, and
+download links published by the Licensor or the official LightC project are
+official LightC distributions. Any other build, package, mirror, archive,
+download link, or redistribution is unofficial and not authorized unless the
+Licensor has provided prior written permission.
+
+5. Ownership
+
+The Software is licensed, not sold. The Licensor retains all right, title, and
+interest in and to the Software, including all copyrights, trademarks, and other
+intellectual property rights not expressly granted under this License.
+
+6. Third-Party Components
+
+The Software may include or depend on third-party components that are licensed
+under separate terms. Those third-party license terms apply to the corresponding
+third-party components. This License applies only to the Software owned or
+licensed by the Licensor under this License.
+
+7. No Open Source Representation
+
+The Software is source available, but it is not licensed as "open source" as
+defined by the Open Source Initiative. This License restricts redistribution,
+commercial use, and distribution of modified versions.
+
+8. Termination
+
+Your rights under this License terminate automatically if you violate any term
+of this License. Upon termination, you must stop using the Software and delete
+all copies of the Software in your possession or control, except where retention
+is required by law.
+
+Termination does not limit any rights or remedies available to the Licensor for
+your violation of this License.
+
+9. Disclaimer of Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, WHETHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE,
+INCLUDING WITHOUT LIMITATION ANY WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE, TITLE, NON-INFRINGEMENT, SECURITY, ACCURACY, OR RELIABILITY.
+YOU USE THE SOFTWARE AT YOUR OWN RISK.
+
+10. Limitation of Liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE LICENSOR SHALL NOT BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY,
+PUNITIVE, OR OTHER DAMAGES, OR FOR ANY LOSS OF PROFITS, DATA, GOODWILL, USE, OR
+BUSINESS OPPORTUNITY, ARISING OUT OF OR RELATING TO THE SOFTWARE OR THIS
+LICENSE, WHETHER BASED ON CONTRACT, TORT, NEGLIGENCE, STRICT LIABILITY, OR ANY
+OTHER LEGAL THEORY, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+11. Separate Commercial Licensing
+
+The Licensor may offer separate commercial, Pro, Enterprise, OEM, redistribution,
+or other licensing terms for the Software. This License does not limit the
+Licensor's right to license the Software under different terms.

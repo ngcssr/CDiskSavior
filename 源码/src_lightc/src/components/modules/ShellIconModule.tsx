@@ -1,0 +1,277 @@
+// ============================================================================
+// 外壳入口包含“此电脑”和左侧导航窗格，不涉及真实磁盘驱动器。
+// 后端负责重新校验 CLSID、Hive、入口类型和系统保护边界，前端只维护选择与交互状态。
+// ============================================================================
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import {
+  CheckCircle2,
+  FileText,
+  FolderOpen,
+  HardDriveDownload,
+  Loader2,
+  Lock,
+  PanelLeft,
+  RefreshCw,
+  Shield,
+  Trash2,
+} from 'lucide-react';
+import { ModuleCard } from '../ModuleCard';
+import { ModuleScanProgress } from '../ModuleScanProgress';
+import { ConfirmDialog } from '../ConfirmDialog';
+import { EmptyState } from '../EmptyState';
+import { useToast } from '../Toast';
+import {
+  openShellIconBackupDir,
+  openShellIconLog,
+  openShellIconRegistry,
+  removeShellIcon,
+  restoreShellIcon,
+  restartExplorer,
+  scanShellIcons,
+  type ShellIconInfo,
+  type ShellIconTarget,
+} from '../../api/commands';
+import { useModuleDashboard } from '../../contexts/DashboardContext';
+import { shouldSkipInactivePageRender, type ModuleRenderProps } from './moduleProps';
+
+type PendingAction = { target: ShellIconTarget; mode: 'remove' | 'lock' | 'restore' };
+
+function getRiskStyle(entry: ShellIconInfo, translate: (key: string) => string): { label: string; className: string } {
+  if (entry.isSystemProtected || entry.riskLevel === 'protected') {
+    return { label: translate('shellIcons.riskProtected'), className: 'bg-[var(--color-danger)]/10 text-[var(--color-danger)]' };
+  }
+  if (entry.riskLevel === 'unknown') {
+    return { label: translate('shellIcons.riskUnknown'), className: 'bg-[var(--color-warning)]/10 text-[var(--color-warning)]' };
+  }
+  if (entry.isLocked || entry.riskLevel === 'locked') {
+    return { label: translate('shellIcons.riskLocked'), className: 'bg-blue-500/10 text-blue-600 dark:text-blue-400' };
+  }
+  return { label: translate('shellIcons.riskThirdParty'), className: 'bg-[var(--brand-green-10)] text-[var(--brand-green)]' };
+}
+
+function targetOf(entry: ShellIconInfo): ShellIconTarget {
+  // 入口类型参与后端固定路径校验，不能仅凭 CLSID 推断，以免同一 CLSID 的不同挂载点互相影响。
+  return { clsid: entry.clsid, hive: entry.hive, registryView: entry.registryView, entryKind: entry.entryKind as ShellIconTarget['entryKind'] };
+}
+
+function ShellIconRow({
+  entry,
+  busy,
+  onAction,
+  onOpenRegistry,
+}: {
+  entry: ShellIconInfo;
+  busy: boolean;
+  onAction: (action: PendingAction) => void;
+  onOpenRegistry: (target: ShellIconTarget) => void;
+}) {
+  const { t } = useTranslation('common');
+  const { t: moduleT } = useTranslation('modules');
+  const risk = getRiskStyle(entry, moduleT);
+  const protectedEntry = entry.isSystemProtected || entry.riskLevel === 'unknown';
+  const isNavigationEntry = entry.entryKind === 'navigationPane';
+  const isRemovedEntry = isNavigationEntry && entry.isLocked;
+
+  return (
+    <div className="glass-block rounded-xl border border-[var(--border-color)] bg-[var(--bg-main)] p-4">
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--brand-green-10)]">
+          {protectedEntry ? <Shield className="h-5 w-5 text-[var(--color-warning)]" /> : isNavigationEntry ? <PanelLeft className="h-5 w-5 text-[var(--brand-green)]" /> : <HardDriveDownload className="h-5 w-5 text-[var(--brand-green)]" />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="truncate text-sm font-semibold text-[var(--text-primary)]" title={entry.name}>{entry.name}</p>
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${risk.className}`}>{risk.label}</span>
+            <span className="rounded-full bg-[var(--bg-hover)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]">{moduleT(isNavigationEntry ? 'shellIcons.navigationPane' : 'shellIcons.myComputer')}</span>
+            <span className="rounded-full bg-[var(--bg-hover)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]">{entry.hive} / {entry.registryView}</span>
+          </div>
+          <p className="mt-1 break-all font-mono text-[11px] text-[var(--text-muted)]">{entry.clsid}</p>
+          <p className="mt-1 break-all text-xs font-medium text-[var(--text-secondary)]">{t('associatedApp')}：{entry.applicationName || t('unknownApp')}</p>
+          <p className="mt-1 break-all text-xs text-[var(--text-faint)]">{moduleT('shellIcons.component')}: {entry.sourcePath || entry.riskReason}</p>
+        </div>
+        <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+          {!protectedEntry && !isRemovedEntry && (
+            <>
+              <button type="button" disabled={busy} onClick={() => onAction({ target: targetOf(entry), mode: 'remove' })} className="inline-flex items-center gap-1 rounded-lg border border-[var(--border-color)] px-2 py-1 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-50" title={t('shellRemoveTitle')}>
+                <Trash2 className="h-3.5 w-3.5" />{moduleT('shellIcons.remove')}
+              </button>
+              {!isNavigationEntry && <button type="button" disabled={busy} onClick={() => onAction({ target: targetOf(entry), mode: 'lock' })} className="inline-flex items-center gap-1 rounded-lg bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700 disabled:opacity-50" title={t('shellLockTitle')}>
+                <Lock className="h-3.5 w-3.5" />{moduleT('shellIcons.lock')}
+              </button>}
+            </>
+          )}
+          {isRemovedEntry && <button type="button" disabled={busy} onClick={() => onAction({ target: targetOf(entry), mode: 'restore' })} className="inline-flex items-center gap-1 rounded-lg bg-[var(--brand-green)] px-2 py-1 text-xs text-white hover:opacity-90 disabled:opacity-50"><RefreshCw className="h-3.5 w-3.5" />{moduleT('shellIcons.restore')}</button>}
+        </div>
+      </div>
+      <div className="mt-3 flex items-center justify-between gap-2 border-t border-[var(--border-muted)] pt-2">
+        <p className="min-w-0 break-all text-[11px] text-[var(--text-faint)]">{entry.regPath}</p>
+        <button type="button" disabled={busy} onClick={() => onOpenRegistry(targetOf(entry))} className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-[var(--border-color)] px-2 py-1 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-hover)] disabled:opacity-50" title={t('openRegistryNode')}>
+          <FolderOpen className="h-3.5 w-3.5" />{moduleT('shellIcons.openRegistry')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ShellEntrySection({
+  title,
+  entries,
+  busy,
+  onAction,
+  onOpenRegistry,
+}: {
+  title: string;
+  entries: ShellIconInfo[];
+  busy: boolean;
+  onAction: (action: PendingAction) => void;
+  onOpenRegistry: (target: ShellIconTarget) => void;
+}) {
+  return (
+    <section className="space-y-2">
+      <h3 className="text-xs font-semibold text-[var(--text-secondary)]">{title}</h3>
+      <div className="space-y-2">
+        {entries.map(entry => (
+          <ShellIconRow
+            key={`${entry.entryKind}-${entry.hive}-${entry.registryView}-${entry.clsid}`}
+            entry={entry}
+            busy={busy}
+            onAction={onAction}
+            onOpenRegistry={onOpenRegistry}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+export function ShellIconModule({ layoutMode = 'cards', isPageActive = true }: ModuleRenderProps) {
+  const { t: navT } = useTranslation('nav');
+  const { t } = useTranslation('common');
+  const { t: moduleT } = useTranslation('modules');
+  const { moduleState, expandedModule, setExpandedModule, updateModuleState, oneClickScanTrigger } = useModuleDashboard('shellIcons');
+  const { showToast } = useToast();
+  const [entries, setEntries] = useState<ShellIconInfo[] | null>(null);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [busyTarget, setBusyTarget] = useState<string | null>(null);
+  const [isOpeningBackup, setIsOpeningBackup] = useState(false);
+  const lastScanTrigger = useRef(0);
+
+  const scan = useCallback(async () => {
+    updateModuleState('shellIcons', { status: 'scanning', error: null });
+    try {
+      const result = await scanShellIcons();
+      setEntries(result);
+      updateModuleState('shellIcons', { status: 'done', fileCount: result.length, totalSize: 0 });
+      setExpandedModule('shellIcons');
+    } catch (error) {
+      updateModuleState('shellIcons', { status: 'error', error: String(error) });
+    }
+  }, [setExpandedModule, updateModuleState]);
+
+  useEffect(() => {
+    if (oneClickScanTrigger > 0 && oneClickScanTrigger !== lastScanTrigger.current) {
+      lastScanTrigger.current = oneClickScanTrigger;
+      void scan();
+    }
+  }, [oneClickScanTrigger, scan]);
+
+  // 旧版本遗留的空锁定节点仍保留操作入口，重新执行时会物理删除并校验结果。
+  const actionableCount = useMemo(() => entries?.filter(entry => !entry.isSystemProtected && entry.riskLevel !== 'unknown').length ?? 0, [entries]);
+  const myComputerEntries = useMemo(() => entries?.filter(entry => entry.entryKind !== 'navigationPane') ?? [], [entries]);
+  const navigationEntries = useMemo(() => entries?.filter(entry => entry.entryKind === 'navigationPane') ?? [], [entries]);
+
+  const executeAction = useCallback(async (action: PendingAction) => {
+    const key = `${action.target.hive}:${action.target.registryView}:${action.target.clsid}`;
+    setBusyTarget(key);
+    try {
+      const result = action.mode === 'remove'
+        ? await removeShellIcon(action.target, 1)
+        : action.mode === 'lock'
+          ? await removeShellIcon(action.target, 2)
+          : await restoreShellIcon(action.target);
+      showToast({ type: 'success', title: moduleT('shellIcons.actionCompleted'), description: result.message });
+      await scan();
+    } catch (error) {
+      showToast({ type: 'error', title: moduleT('shellIcons.actionFailed'), description: String(error) });
+    } finally {
+      setBusyTarget(null);
+      setPendingAction(null);
+    }
+  }, [scan, showToast]);
+
+  const isExpanded = expandedModule === 'shellIcons';
+  if (shouldSkipInactivePageRender(layoutMode, isPageActive) && !pendingAction) return null;
+
+  return (
+    <>
+      <ModuleCard
+        id="shellIcons"
+        title={navT('shellIcons')}
+        description={navT('shellIconsDesc')}
+        icon={<HardDriveDownload className="h-6 w-6 text-[var(--brand-green)]" />}
+        status={moduleState.status}
+        fileCount={moduleState.fileCount}
+        totalSize={0}
+        countLabel={moduleT('shellIcons.nodes')}
+        hideTotalSize
+        expanded={isExpanded}
+        onToggleExpand={() => setExpandedModule(isExpanded ? null : 'shellIcons')}
+        onScan={() => void scan()}
+        scanDisabled={Boolean(busyTarget)}
+        scanButtonText={moduleState.status === 'scanning' ? t('scanningShort') : entries ? t('rescan') : moduleT('shellIcons.scan')}
+        error={moduleState.error}
+        variant={layoutMode === 'pages' ? 'page' : 'card'}
+        forceExpanded={layoutMode === 'pages'}
+        titleExtra={<span className="rounded-full bg-orange-500/10 px-2 py-1 text-[10px] font-medium text-orange-600 dark:text-orange-400">{moduleT('shellIcons.caution')}</span>}
+      >
+        <div className="space-y-4 p-5">
+        {!entries && moduleState.status === 'idle' && <EmptyState icon={HardDriveDownload} title={t('notScannedShellIcons')} description={t('shellScanDescription')} />}
+          {moduleState.status === 'scanning' && !entries && (
+            <ModuleScanProgress
+              title={t('scanningShort')}
+              description={moduleT('shellIcons.scanningDesc')}
+              icon={<Loader2 className="h-7 w-7 animate-spin text-[var(--brand-green)]" />}
+            />
+          )}
+
+          {entries && (
+            <>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="glass-block rounded-xl bg-[var(--bg-main)] p-3 text-center"><p className="text-xl font-bold text-[var(--text-primary)]">{entries.length}</p><p className="text-xs text-[var(--text-muted)]">{moduleT('shellIcons.scannedNodes')}</p></div>
+                <div className="rounded-xl bg-[var(--brand-green-10)] p-3 text-center"><p className="text-xl font-bold text-[var(--brand-green)]">{actionableCount}</p><p className="text-xs text-[var(--text-muted)]">{moduleT('shellIcons.actionableNodes')}</p></div>
+                <div className="rounded-xl bg-blue-500/10 p-3 text-center"><p className="text-xl font-bold text-blue-600 dark:text-blue-400">{entries.filter(entry => entry.isLocked).length}</p><p className="text-xs text-[var(--text-muted)]">{moduleT('shellIcons.lockedNodes')}</p></div>
+              </div>
+              <div className="glass-block flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-main)] p-3">
+                <div className="flex flex-wrap gap-2 text-xs text-[var(--text-muted)]"><span className="inline-flex items-center gap-1"><Shield className="h-3.5 w-3.5 text-[var(--color-warning)]" />{moduleT('shellIcons.protectedHint')}</span><span className="inline-flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5 text-[var(--brand-green)]" />{moduleT('shellIcons.backupHint')}</span></div>
+                <div className="flex gap-2">
+                  <button type="button" disabled={isOpeningBackup} onClick={() => { setIsOpeningBackup(true); void openShellIconBackupDir().catch(error => showToast({ type: 'error', title: moduleT('shellIcons.openBackupFailed'), description: String(error) })).finally(() => setIsOpeningBackup(false)); }} className="inline-flex items-center gap-1 rounded-lg border border-[var(--border-color)] px-2.5 py-1.5 text-xs text-[var(--text-muted)] hover:bg-[var(--bg-hover)] disabled:opacity-50"><FolderOpen className="h-3.5 w-3.5" />{moduleT('shellIcons.backupDir')}</button>
+                  <button type="button" onClick={() => void openShellIconLog().catch(error => showToast({ type: 'error', title: moduleT('shellIcons.openLogFailed'), description: String(error) }))} className="inline-flex items-center gap-1 rounded-lg border border-[var(--border-color)] px-2.5 py-1.5 text-xs text-[var(--text-muted)] hover:bg-[var(--bg-hover)]"><FileText className="h-3.5 w-3.5" />{moduleT('shellIcons.operationLog')}</button>
+                  <button type="button" onClick={() => void restartExplorer().then(() => showToast({ type: 'success', title: moduleT('shellIcons.explorerRefreshed'), description: moduleT('shellIcons.explorerRefreshedDesc') })).catch(error => showToast({ type: 'error', title: moduleT('shellIcons.refreshFailed'), description: String(error) }))} className="inline-flex items-center gap-1 rounded-lg border border-[var(--brand-green-20)] px-2.5 py-1.5 text-xs text-[var(--brand-green)] hover:bg-[var(--brand-green-10)]"><RefreshCw className="h-3.5 w-3.5" />{moduleT('shellIcons.refresh')}</button>
+                </div>
+              </div>
+              {entries.length === 0 ? <EmptyState icon={CheckCircle2} title={t('noThirdPartyShellIcons')} description={t('noShellIconsDescription')} tone="success" compact /> : <div className="space-y-4">
+                {myComputerEntries.length > 0 && <ShellEntrySection title={moduleT('shellIcons.myComputer')} entries={myComputerEntries} busy={busyTarget !== null} onAction={setPendingAction} onOpenRegistry={(target) => { void openShellIconRegistry(target).catch(error => showToast({ type: 'error', title: t('registryLocationFailed'), description: String(error) })); }} />}
+                {navigationEntries.length > 0 && <ShellEntrySection title={moduleT('shellIcons.navigationPane')} entries={navigationEntries} busy={busyTarget !== null} onAction={setPendingAction} onOpenRegistry={(target) => { void openShellIconRegistry(target).catch(error => showToast({ type: 'error', title: t('registryLocationFailed'), description: String(error) })); }} />}
+              </div>}
+            </>
+          )}
+        </div>
+      </ModuleCard>
+
+      <ConfirmDialog
+        isOpen={pendingAction !== null}
+        onCancel={() => setPendingAction(null)}
+        onConfirm={() => { if (pendingAction) void executeAction(pendingAction); }}
+        title={pendingAction?.mode === 'lock' ? moduleT('shellIcons.confirmLock') : pendingAction?.mode === 'restore' ? moduleT('shellIcons.confirmRestore') : moduleT('shellIcons.confirmRemove')}
+        description={pendingAction?.mode === 'lock' ? moduleT('shellIcons.confirmLockDesc') : pendingAction?.mode === 'restore' ? moduleT('shellIcons.confirmRestoreDesc') : pendingAction?.target.entryKind === 'navigationPane' ? moduleT('shellIcons.confirmNavigationRemoveDesc') : moduleT('shellIcons.confirmRemoveDesc')}
+        warning={t('shellDeleteWarning')}
+        confirmText={pendingAction?.mode === 'lock' ? moduleT('shellIcons.lock') : pendingAction?.mode === 'restore' ? moduleT('shellIcons.restore') : moduleT('shellIcons.remove')}
+        isDanger
+      />
+    </>
+  );
+}
+
+export default ShellIconModule;

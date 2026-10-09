@@ -1,0 +1,610 @@
+// ============================================================================
+// 目录下钻模态框组件
+// 以沉浸式弹窗模式展示指定路径的无限下钻内容
+// 支持面包屑导航、ESC 关闭、Portal 渲染、清理同步回调
+// ============================================================================
+
+import { useState, useCallback, useEffect, useRef, useMemo, memo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { createPortal } from 'react-dom';
+import {
+  X, Loader2, FolderOpen, Clock, HardDrive, ChevronRight,
+  CornerLeftUp, Search, Shield, Trash2, ChevronDown,
+} from 'lucide-react';
+import { ConfirmDialog } from '../ConfirmDialog';
+import { useToast } from '../Toast';
+import {
+  scanPathDirect, openInFolder, cleanupDirectoryContents,
+  type HotspotScanResult, type HotspotEntry,
+} from '../../api/commands';
+import { formatSize } from '../../utils/format';
+import { openSearchUrl } from '../../utils/searchEngine';
+
+// ============================================================================
+// 工具函数（与 HotspotModule 共享逻辑）
+// ============================================================================
+
+function formatDateTime(timestamp: number): string {
+  if (!timestamp) return '-';
+  // 大目录 MFT 引擎使用 Unix 秒，降级扫描使用毫秒；展示层统一归一化，兼容两种来源。
+  const normalizedTimestamp = timestamp < 10_000_000_000 ? timestamp * 1000 : timestamp;
+  const d = new Date(normalizedTimestamp);
+  if (Number.isNaN(d.getTime())) return '-';
+  const Y = d.getFullYear();
+  const M = String(d.getMonth() + 1).padStart(2, '0');
+  const D = String(d.getDate()).padStart(2, '0');
+  const h = String(d.getHours()).padStart(2, '0');
+  const m = String(d.getMinutes()).padStart(2, '0');
+  return `${Y}-${M}-${D} ${h}:${m}`;
+}
+
+function getParentTypeColor(type: string): string {
+  switch (type) {
+    case 'Local':      return 'text-blue-500 bg-blue-50 dark:bg-blue-900/20';
+    case 'Roaming':    return 'text-purple-500 bg-purple-50 dark:bg-purple-900/20';
+    case 'LocalLow':   return 'text-orange-500 bg-orange-50 dark:bg-orange-900/20';
+    case 'Windows':    return 'text-red-500 bg-red-50 dark:bg-red-900/20';
+    case 'Program Files':
+    case 'Program Files (x86)':
+      return 'text-amber-500 bg-amber-50 dark:bg-amber-900/20';
+    case 'Users':      return 'text-cyan-500 bg-cyan-50 dark:bg-cyan-900/20';
+    case 'System':     return 'text-rose-500 bg-rose-50 dark:bg-rose-900/20';
+    default:           return 'text-gray-500 bg-gray-50 dark:bg-gray-900/20';
+  }
+}
+
+function FolderRankBadge({
+  rank,
+  isProtected,
+}: {
+  rank: number;
+  isProtected: boolean;
+}) {
+  return (
+    <div className="flex-shrink-0 relative w-10 h-9 flex items-center justify-center">
+      <div className={`relative w-9 h-7 rounded-md shadow-sm ${
+        isProtected
+          ? 'bg-red-400'
+          : rank <= 3
+            ? 'bg-amber-400'
+            : 'bg-amber-300'
+      }`}>
+        <div className={`absolute -top-1 left-1.5 h-2.5 w-4 rounded-t-md ${
+          isProtected
+            ? 'bg-red-300'
+            : rank <= 3
+              ? 'bg-amber-300'
+              : 'bg-amber-200'
+        }`} />
+        <div className="absolute inset-x-0 bottom-0 h-5 rounded-md bg-gradient-to-b from-yellow-300 to-amber-500" />
+      </div>
+      <span className={`absolute -right-0.5 -bottom-0.5 min-w-5 h-5 px-1 rounded-full flex items-center justify-center text-[10px] font-bold shadow-sm ${
+        isProtected ? 'bg-red-500 text-white' : 'bg-[var(--brand-green)] text-white'
+      }`}>
+        {rank}
+      </span>
+    </div>
+  );
+}
+
+// ============================================================================
+// 面包屑导航
+// 路径过长时截断中间部分，保留最后两级
+// ============================================================================
+
+interface BreadcrumbSegment {
+  name: string;
+  path: string;
+}
+
+/** 将 Windows 绝对路径拆分为面包屑段 */
+function buildBreadcrumbs(fullPath: string): BreadcrumbSegment[] {
+  const parts = fullPath.replace(/\//g, '\\').split('\\').filter(Boolean);
+  const segments: BreadcrumbSegment[] = [];
+  let accumulated = '';
+  for (const part of parts) {
+    accumulated = accumulated ? `${accumulated}\\${part}` : part;
+    // 第一段是盘符如 "C:"，补上反斜杠
+    const path = segments.length === 0 ? `${accumulated}\\` : accumulated;
+    segments.push({ name: part, path });
+  }
+  return segments;
+}
+
+function ModalBreadcrumbs({
+  segments,
+  initialDepth,
+  onNavigate,
+}: {
+  segments: BreadcrumbSegment[];
+  /** 初始路径的层级数，前 initialDepth 级不可点击 */
+  initialDepth: number;
+  onNavigate: (path: string) => void;
+}) {
+  // 如果段数 > 5，截断中间保留 前2 + "..." + 后2
+  const MAX_VISIBLE = 5;
+  // 记录原始索引以判断是否可点击
+  type VisibleItem = { seg: BreadcrumbSegment; originalIndex: number } | null;
+  let visible: VisibleItem[] = segments.map((seg, i) => ({ seg, originalIndex: i }));
+  if (segments.length > MAX_VISIBLE) {
+    visible = [
+      { seg: segments[0], originalIndex: 0 },
+      { seg: segments[1], originalIndex: 1 },
+      null, // 省略号占位
+      { seg: segments[segments.length - 2], originalIndex: segments.length - 2 },
+      { seg: segments[segments.length - 1], originalIndex: segments.length - 1 },
+    ];
+  }
+
+  return (
+    <div className="flex items-center gap-1 text-xs overflow-x-auto scrollbar-thin py-1 min-w-0">
+      {visible.map((item, idx) => {
+        if (item === null) {
+          return (
+            <span key="ellipsis" className="flex items-center gap-1 shrink-0 text-[var(--text-faint)]">
+              <ChevronRight className="w-3 h-3" />
+              <span>···</span>
+            </span>
+          );
+        }
+        const { seg, originalIndex } = item;
+        const isLast = idx === visible.length - 1;
+        // initialPath 的父级目录不可点击（已在父模块扫描过），initialPath 本身及之后可点击
+        // initialDepth 是 initialPath 的层级数，所以 index < initialDepth - 1 的不可点击
+        const isClickable = originalIndex >= initialDepth - 1 && !isLast;
+        return (
+          <span key={seg.path} className="flex items-center gap-1 shrink-0">
+            {idx > 0 && <ChevronRight className="w-3 h-3 text-[var(--text-faint)]" />}
+            {isLast ? (
+              <span
+                className="font-semibold text-[var(--text-primary)] max-w-[180px] truncate"
+                title={seg.path}
+              >
+                {seg.name}
+              </span>
+            ) : isClickable ? (
+              <button
+                onClick={() => onNavigate(seg.path)}
+                className="text-[var(--text-muted)] hover:text-[var(--brand-green)] hover:underline transition-colors max-w-[120px] truncate"
+                title={seg.path}
+              >
+                {seg.name}
+              </button>
+            ) : (
+              <span
+                className="text-[var(--text-faint)] max-w-[120px] truncate cursor-default"
+                title={seg.path}
+              >
+                {seg.name}
+              </span>
+            )}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+// ============================================================================
+// 下钻列表条目（沉浸式 - 全宽、无缩进）
+// ============================================================================
+
+interface ModalEntryItemProps {
+  entry: HotspotEntry;
+  rank: number;
+  maxSize: number;
+  onDrillDown: (path: string) => void;
+  onOpenFolder: (path: string) => void;
+  onCleanup: (entry: HotspotEntry) => void;
+  onSearch: (path: string) => void;
+}
+
+// 使用 React.memo 避免列表项无关重渲染（父组件 state 变化时不波及已渲染的条目）
+const ModalEntryItem = memo(function ModalEntryItem({
+  entry, rank, maxSize, onDrillDown, onOpenFolder, onCleanup, onSearch,
+}: ModalEntryItemProps) {
+  const { t: moduleT } = useTranslation('modules');
+  const percentage = maxSize > 0 ? (entry.total_size / maxSize) * 100 : 0;
+  const canCleanup = entry.is_safe_to_clean && entry.is_cache && !entry.is_program && !entry.is_protected;
+
+  return (
+    <div
+      className={`group relative rounded-xl p-3 hover:bg-[var(--bg-hover)] transition-colors cursor-default ${
+        entry.is_protected ? 'border border-red-200 dark:border-red-800/30' : ''
+      }`}
+    >
+      {/* 占比背景条 */}
+      <div
+        className={`absolute inset-0 rounded-xl opacity-40 transition-all ${
+          entry.is_protected ? 'bg-red-100 dark:bg-red-900/10' : 'bg-[var(--brand-green-10)]'
+        }`}
+        style={{ width: `${percentage}%` }}
+      />
+
+      <div className="relative flex items-center gap-3">
+        {/* 文件夹徽标：与大目录分析主列表保持一致，序号作为角标承载排序信息。 */}
+        <FolderRankBadge rank={rank} isProtected={entry.is_protected} />
+
+        {/* 左侧：图标 + 名称 */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <FolderOpen className="w-4 h-4 text-[var(--text-muted)] flex-shrink-0" />
+            <span className="font-medium text-sm text-[var(--text-primary)]">{entry.name}</span>
+            <span className={`flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded ${getParentTypeColor(entry.parent_type)}`}>
+              {entry.parent_type}
+            </span>
+            {entry.is_protected && (
+              <span className="flex-shrink-0 flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded text-red-500 bg-red-50 dark:bg-red-900/20">
+                <Shield className="w-3 h-3" />
+                {moduleT('hotspot.systemProtected')}
+              </span>
+            )}
+            {entry.is_cache && !entry.is_program && !entry.is_protected && (
+              <span className="flex-shrink-0 flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded text-orange-500 bg-orange-50 dark:bg-orange-900/20">
+                <Trash2 className="w-3 h-3" />
+                {moduleT('hotspot.temporaryCache')}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* 右侧：大小 + 修改日期 + 操作按钮 */}
+        <div className="flex-shrink-0 flex items-center gap-4 text-xs">
+          <div className="hidden sm:flex items-center gap-1 text-[var(--text-muted)]">
+            <HardDrive className="w-3 h-3" />
+            <span>{moduleT('hotspot.fileCount', { count: entry.file_count.toLocaleString() })}</span>
+          </div>
+          <div className="hidden md:flex items-center gap-1 text-[var(--text-muted)]">
+            <Clock className="w-3 h-3" />
+            <span>{formatDateTime(entry.last_modified)}</span>
+          </div>
+          <div className={`font-semibold min-w-[70px] text-right ${
+            entry.is_protected ? 'text-red-500' : 'text-[var(--brand-green)]'
+          }`}>
+            {formatSize(entry.total_size)}
+          </div>
+
+          {/* 操作按钮组 */}
+          <div className="flex items-center gap-1">
+            {/* 下钻 */}
+            <button
+              onClick={(e) => { e.stopPropagation(); onDrillDown(entry.path); }}
+              className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-[var(--brand-green-10)] text-[var(--brand-green)] transition-all"
+              title={moduleT('drillDown.expand')}
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            {/* 清理 */}
+            {canCleanup && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onCleanup(entry); }}
+                className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-orange-100 dark:hover:bg-orange-900/30 text-orange-500 transition-all"
+                title={moduleT('drillDown.cleanup')}
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+            {/* 搜索 全路径用.path，文件夹名称用.name */}
+            <button
+              onClick={(e) => { e.stopPropagation(); onSearch(entry.path); }}
+              className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-[var(--bg-card)] text-[var(--text-muted)] hover:text-blue-500 transition-all"
+              title={moduleT('drillDown.search')}
+            >
+              <Search className="w-4 h-4" />
+            </button>
+            {/* 打开文件夹 */}
+            <button
+              onClick={(e) => { e.stopPropagation(); onOpenFolder(entry.path); }}
+              className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-[var(--bg-card)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-all"
+              title={moduleT('drillDown.open')}
+            >
+              <FolderOpen className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+// ============================================================================
+// DrillDownModal 主组件
+// ============================================================================
+
+interface DrillDownModalProps {
+  /** 初始路径（点击下钻时传入的路径） */
+  initialPath: string;
+  /** 关闭回调 */
+  onClose: () => void;
+  /** 清理发生后的同步回调（通知主界面刷新） */
+  onCleanupDone?: () => void;
+}
+
+export function DrillDownModal({ initialPath, onClose, onCleanupDone }: DrillDownModalProps) {
+  const { t: moduleT } = useTranslation('modules');
+  const { t } = useTranslation('common');
+  const { showToast } = useToast();
+
+  // ====== 动画状态 ======
+  const [isVisible, setIsVisible] = useState(false);
+  const [isAnimating, setIsAnimating] = useState(true);
+  const enteredRef = useRef(false);
+  if (isVisible) enteredRef.current = true;
+
+  // ====== 数据状态 ======
+  /** 路径栈：从初始路径开始，每次下钻 push，回退 pop */
+  const [pathStack, setPathStack] = useState<string[]>([initialPath]);
+  const [scanResult, setScanResult] = useState<HotspotScanResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  /** 记录本次模态框内是否发生过清理（用于关闭时同步） */
+  const didCleanupRef = useRef(false);
+
+  // ====== 清理确认对话框 ======
+  const [cleanupTarget, setCleanupTarget] = useState<HotspotEntry | null>(null);
+  const [isCleaning, setIsCleaning] = useState(false);
+
+  // ====== 条目上限：默认展示30条，超出时显示"展示全部"（防止数百个子目录撑爆 DOM） ======
+  const [showAll, setShowAll] = useState(false);
+  const DEFAULT_DISPLAY_COUNT = 30;
+
+  // 当前路径（栈顶）
+  const currentPath = pathStack[pathStack.length - 1];
+
+  // ====== 入场动画 ======
+  useEffect(() => {
+    // 延迟一帧触发动画
+    const raf = requestAnimationFrame(() => setIsVisible(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  // ====== ESC 键关闭 ======
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') handleClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ====== 数据加载 ======
+  const fetchData = useCallback(async (targetPath: string) => {
+    setLoading(true);
+    try {
+      const result = await scanPathDirect(targetPath);
+      setScanResult(result);
+    } catch (err) {
+      console.error('下钻扫描失败:', err);
+      showToast({ type: 'error', title: moduleT('drillDown.scanFailed'), description: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  }, [showToast]);
+
+  // 初始加载 + 路径变化时重新加载，同时重置展示上限
+  useEffect(() => {
+    fetchData(currentPath);
+    setShowAll(false);
+  }, [currentPath, fetchData]);
+
+  // ====== 关闭（带退出动画） ======
+  const handleClose = useCallback(() => {
+    setIsVisible(false);
+    setTimeout(() => {
+      setIsAnimating(false);
+      if (didCleanupRef.current) {
+        onCleanupDone?.();
+      }
+      onClose();
+    }, 190);
+  }, [onClose, onCleanupDone]);
+
+  // ====== 下钻 ======
+  const handleDrillDown = useCallback((path: string) => {
+    setPathStack(prev => [...prev, path]);
+  }, []);
+
+  // ====== 返回上级 ======
+  const handleGoBack = useCallback(() => {
+    if (pathStack.length <= 1) {
+      handleClose();
+      return;
+    }
+    setPathStack(prev => prev.slice(0, -1));
+  }, [pathStack.length, handleClose]);
+
+  // ====== 面包屑跳转 ======
+  const handleBreadcrumbNavigate = useCallback((targetPath: string) => {
+    // 找到 pathStack 中对应的位置，截断到那里
+    // 如果目标不在栈中（面包屑是完整路径拆分），直接替换栈
+    const idx = pathStack.findIndex(p => p === targetPath);
+    if (idx >= 0) {
+      setPathStack(prev => prev.slice(0, idx + 1));
+    } else {
+      setPathStack([targetPath]);
+    }
+  }, [pathStack]);
+
+  // ====== 打开文件夹 ======
+  const handleOpenFolder = useCallback(async (path: string) => {
+    try {
+      await openInFolder(path);
+    } catch (err) {
+      console.error('打开文件夹失败:', err);
+    }
+  }, []);
+
+  // ====== 搜索 ======
+  const handleSearch = useCallback(async (path: string) => {
+    try {
+      await openSearchUrl(`Windows 文件夹 ${path} 可以删除吗`);
+    } catch (err) {
+      console.error('打开搜索链接失败:', err);
+    }
+  }, []);
+
+  // ====== 清理 ======
+  const handleCleanupConfirm = useCallback(async () => {
+    if (!cleanupTarget) return;
+    setIsCleaning(true);
+    try {
+      const result = await cleanupDirectoryContents(cleanupTarget.path);
+      if (result.deleted_count > 0) {
+        showToast({
+          type: 'success',
+          title: moduleT('drillDown.cleanupDone'),
+          description: moduleT('hotspot.cleanupDoneDesc', { count: result.deleted_count, size: formatSize(result.freed_size) }),
+        });
+        didCleanupRef.current = true;
+        // 重新加载当前层
+        fetchData(currentPath);
+      } else if (result.failed_count > 0) {
+        showToast({ type: 'warning', title: moduleT('drillDown.cleanupBlocked'), description: moduleT('hotspot.cleanupBlockedDesc', { count: result.failed_count }) });
+      } else {
+        showToast({ type: 'info', title: moduleT('drillDown.empty'), description: moduleT('hotspot.emptyDesc') });
+      }
+    } catch (err) {
+      console.error('清理失败:', err);
+      showToast({ type: 'error', title: moduleT('drillDown.cleanupFailed'), description: String(err) });
+    } finally {
+      setIsCleaning(false);
+      setCleanupTarget(null);
+    }
+  }, [cleanupTarget, currentPath, fetchData, showToast]);
+
+  // 面包屑段（useMemo 避免每次 render 重新计算）
+  const breadcrumbSegments = useMemo(() => buildBreadcrumbs(currentPath), [currentPath]);
+  // 初始路径的层级数（前 initialDepth 级不可点击，因为父模块已扫描过）
+  const initialDepth = useMemo(() => buildBreadcrumbs(initialPath).length, [initialPath]);
+  const maxSize = scanResult?.entries[0]?.total_size || 0;
+
+  // 显示的条目列表（默认限制 30 条，超出时显示"展示全部"按钮）
+  const displayedEntries = useMemo(() => {
+    if (!scanResult) return [];
+    return showAll ? scanResult.entries : scanResult.entries.slice(0, DEFAULT_DISPLAY_COUNT);
+  }, [scanResult, showAll]);
+
+  if (!isAnimating) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9998] flex items-center justify-center p-4">
+      {/* 遮罩层 - 半透明磨砂 */}
+      <div
+        className={`absolute inset-0 bg-black/40 backdrop-blur-md ${
+          isVisible ? 'modal-overlay-in' : enteredRef.current ? 'modal-overlay-out' : 'opacity-0'
+        }`}
+        onClick={handleClose}
+      />
+
+      {/* 模态框主体 */}
+      <div
+        className={`relative flex flex-col bg-[var(--bg-elevated)] rounded-2xl shadow-2xl border border-[var(--border-default)]
+          w-[51.43em] max-w-[calc(100vw-2em)] max-h-[min(57.14em,calc(100vh_-_2em))] overflow-hidden ${
+          isVisible ? 'modal-content-in' : enteredRef.current ? 'modal-content-out' : 'opacity-0'
+        }`}
+      >
+        {/* ====== 头部：面包屑 + 关闭按钮 ====== */}
+        {/* 内部尺寸统一用 em，跟随全局字号缩放，避免只有外壳变大而内容不变 */}
+        <div className="glass-bar flex items-center justify-between px-[1.43em] py-[0.86em] border-b border-[var(--border-default)] bg-[var(--bg-card)]/80 backdrop-blur-sm">
+          <div className="flex-1 min-w-0 mr-[0.86em]">
+            <ModalBreadcrumbs segments={breadcrumbSegments} initialDepth={initialDepth} onNavigate={handleBreadcrumbNavigate} />
+          </div>
+          <button
+            onClick={handleClose}
+            className="flex-shrink-0 p-[0.43em] rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
+            title={moduleT('drillDown.close') + ' (ESC)'}
+          >
+            <X className="w-[1.14em] h-[1.14em]" />
+          </button>
+        </div>
+
+        {/* ====== 内容区：可滚动列表 ====== */}
+        <div className="flex-1 overflow-y-auto px-[1.14em] py-[0.86em] space-y-[0.57em] min-h-[14.29em]">
+          {/* 加载中 */}
+          {loading && (
+            <div className="flex items-center justify-center py-[4.57em]">
+              <Loader2 className="w-[1.71em] h-[1.71em] animate-spin text-[var(--brand-green)] mr-[0.57em]" />
+              <span className="text-[1em] text-[var(--text-muted)]">{moduleT('drillDown.scanning')}</span>
+            </div>
+          )}
+
+          {/* 列表内容 */}
+          {!loading && scanResult && (
+            <>
+              {/* 返回上级 */}
+              <button
+                onClick={handleGoBack}
+                className="w-full flex items-center gap-[0.86em] p-[0.86em] rounded-xl hover:bg-[var(--bg-hover)] transition-colors text-left"
+              >
+                <div className="w-[2em] h-[2em] rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] flex items-center justify-center">
+                  <CornerLeftUp className="w-[1.14em] h-[1.14em] text-[var(--text-muted)]" />
+                </div>
+                <span className="text-[1em] text-[var(--text-muted)]">
+                  {pathStack.length <= 1 ? moduleT('drillDown.close') : moduleT('drillDown.back')}
+                </span>
+              </button>
+
+              {/* 目录条目（默认 30 条上限，防止大目录卡顿） */}
+              {displayedEntries.map((entry, index) => (
+                <ModalEntryItem
+                  key={entry.path}
+                  entry={entry}
+                  rank={index + 1}
+                  maxSize={maxSize}
+                  onDrillDown={handleDrillDown}
+                  onOpenFolder={handleOpenFolder}
+                  onCleanup={setCleanupTarget}
+                  onSearch={handleSearch}
+                />
+              ))}
+
+              {/* 展示全部按钮（条目数超过限制时显示） */}
+              {!showAll && scanResult.entries.length > DEFAULT_DISPLAY_COUNT && (
+                <button
+                  onClick={() => setShowAll(true)}
+                  className="w-full flex items-center justify-center gap-[0.29em] py-[0.57em] text-[0.86em] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                >
+                  <span>{moduleT('drillDown.showAll', { count: scanResult.entries.length })}</span>
+                  <ChevronDown className="w-[1.14em] h-[1.14em]" />
+                </button>
+              )}
+
+              {/* 空状态 */}
+              {scanResult.entries.length === 0 && (
+                <div className="text-center py-[2.86em] text-[var(--text-muted)]">
+                  <FolderOpen className="w-[2.29em] h-[2.29em] mx-auto mb-[0.57em] opacity-30" />
+                  <p className="text-[1em]">{moduleT('drillDown.noFolders')}</p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* ====== 底栏：统计信息 ====== */}
+        {!loading && scanResult && scanResult.entries.length > 0 && (
+          <div className="glass-bar flex items-center justify-between px-[1.43em] py-[0.71em] border-t border-[var(--border-default)] text-[0.86em] text-[var(--text-muted)] bg-[var(--bg-card)]/80 backdrop-blur-sm">
+            <span>
+              {moduleT('drillDown.summary', { count: scanResult.entries.length, size: formatSize(scanResult.scanned_total_size) })}
+            </span>
+            <span>{moduleT('drillDown.elapsed', { time: (scanResult.scan_duration_ms / 1000).toFixed(1) })}</span>
+          </div>
+        )}
+      </div>
+
+      {/* 清理确认对话框（嵌套 Portal，z-index 更高） */}
+      {cleanupTarget && (
+        <ConfirmDialog
+          isOpen={!!cleanupTarget}
+          title={moduleT('hotspot.confirmCleanup')}
+          description={moduleT('drillDown.confirmDesc', { name: cleanupTarget.name })}
+          warning={moduleT('drillDown.occupiedWarning')}
+          confirmText={isCleaning ? t('deleting') : moduleT('hotspot.confirmCleanup')}
+          cancelText={t('cancel')}
+          onConfirm={handleCleanupConfirm}
+          onCancel={() => setCleanupTarget(null)}
+          isDanger={false}
+        />
+      )}
+    </div>,
+    document.body
+  );
+}

@@ -1,0 +1,436 @@
+"�
+"�
+# �
+2026-07-31 curated �
+AppData �
+/�
+Youdao�
+PotPlayer/XMind�
+CloudMusic|�
+|cloudmusic,�
+KuGou|�
+|kugou,�
+Feishu|�
+|feishu,lark
+Foxit Software|�
+PDF|foxit,�
+Kwai|�
+|kwai,�
+Thunder|�
+|thunder,�
+cache�
+]% �
+/�
+T% �
+/�
+k% �
+%)�
+%)�
+>%)�
+^% �
+/�
+/�
+safecaution
+u}@
+u}@
+g}@
+systemsoftwarepersonalsystemFileother
+Hu}@
+Nu}@
+r}@
+Vu}@
+^u}@
+hu}@
+windows.old�
+(Windows.old)�
+Windows �
+10 �
+windows/winsxsWindows �
+(WinSxS)�
+DISM �
+windows/installerWindows �
+/�
+windows/system32�
+(System32)Windows �
+windows/syswow6432 �
+(SysWOW64)�
+32 �
+windows/softwaredistributionWindows �
+windows/temp�
+windows/logs�
+windows/memory.dmp�
+(MEMORY.DMP)�
+windows/livekernelreports�
+(LiveKernelReports)Windows �
+/�
+windowsWindows �
+hiberfil.sys�
+pagefile.sys�
+(�
+)�
+swapfile.sys�
+appdata/local/temp�
+(Temp)�
+appdata/local/npm-cachenpm �
+Node.js �
+npm cache clean --force �
+appdata/roaming/npmnpm �
+Node �
+appdata/local/pip/cachepip �
+Python �
+pip cache purge �
+appdata/local/jianyingpro�
+/�
+roaming/idm/dwnldataIDM �
+IDM �
+IDM �
+roaming/neatdmNeatDM �
+Neat Download Manager �
+appdata/local/jetbrainsJetBrains �
+IDE �
+IDE �
+Invalidate Caches �
+appdata/local/ms-playwrightPlaywright �
+appdata/local/microsoft/windows/inetcacheIE/�
+appdata/local/google/chromeChrome �
+/�
+Chrome �
+appdata/local/microsoft/edgeEdge �
+/�
+Edge �
+appdata/roaming/tencent�
+QQ/�
+appdata/roaming/dingtalk�
+appdata/local/dingtalk�
+Cache �
+appdata/local/wslWSL Linux �
+Linux �
+Linux �
+wsl �
+appdata/local/uvuv �
+Python �
+uv �
+uv cache clean �
+appdata/local/synologydriveSynology Drive �
+log/temp �
+appdata/local/google/androidstudioAndroid Studio �
+Android Studio �
+log/tmp �
+radeonsoftware/cacheAMD Radeon �
+AMD �
+amdrssrcext/cacheAMD Radeon �
+AMD �
+Source Extension�
+amd/ppcAMD �
+AMD �
+AMD �
+appdata/roaming/codeVS Code �
+VS Code �
+Cache �
+adobe/common/media cacheAdobe �
+Premiere/AE �
+com.adobe.dunamisAdobe �
+Adobe Creative Cloud �
+Adobe �
+kingsoft/office6/cacheWPS �
+WPS Office �
+kingsoft/office6/logWPS �
+WPS Office �
+kingsoft/pdf/cacheWPS PDF �
+WPS PDF �
+kingsoft/kupdateui/cacheWPS �
+WPS �
+kingsoft/wpsoffice/cacheWPS �
+WPS Office �
+/shadercache�
+appdata/local/keil_v5Keil MDK �
+(Keil_v5)Keil �
+Pack Installer �
+appdata/local/arm/packsArm CMSIS �
+CMSIS Pack�
+appdata/roaming/pcsuitevivo �
+(pcsuite)vivo �
+PDF/PPT/�
+islideiSlide PPT �
+iSlide PowerPoint �
+larkshell�
+(LarkShell)�
+/Lark �
+ShaderCache �
+sogoupdf/log�
+PDF �
+PDF �
+appdata/local/meitu�
+PC �
+huorong/sysdiag/log�
+ProgramData �
+huorong/sysdiag/quarantine�
+miktexMiKTeX �
+LaTeX �
+MiKTeX �
+originlabOrigin �
+OriginLab �
+teamviewerTeamViewer �
+TeamViewer �
+firaxis games�
+VI �
+VI �
+daedalic entertainmentDaedalic �
+Daedalic �
+paradox interactive/launcherParadox �
+Paradox �
+slaythespire2/logs�
+2 �
+2 �
+spiritcity/saved/logsSpiritCity �
+SpiritCity �
+pal/saved/logsPal �
+Pal �
+manorlords/saved/logsManor Lords �
+Manor Lords �
+/�
+baidunetdiskdownload�
+wechat files�
+/�
+/�
+xwechat_files�
+jianyingpro drafts�
+.minecraftMinecraft �
+saves �
+renpyRen'Py �
+Ren'Py �
+saves�
+mailmasterdata�
+thunderdownload�
+baidunetdisk�
+/.lingma�
+/Qoder CN �
+Qoder CN�
+IDE �
+10GB+�
+appdata/local�
+appdata/roaming/zoteroZotero �
+Zotero �
+PDF �
+appdata/roaming/mathworksMATLAB �
+(MathWorks)MATLAB �
+appdata/roaming/godotGodot �
+Godot �
+appdata/roaming�
+topaz labsTopaz �
+(Gigapixel AI)Topaz Gigapixel AI �
+AI �
+ProgramData�
+15GB�
+nvidia appNVIDIA App �
+NVIDIA App �
+GB�
+App �
+lghub�
+G HUB �
+Logitech G HUB �
+programdata/ul/3dmark3DMark �
+3DMark �
+ProgramData�
+GB�
+steamappsSteam �
+Steam �
+Steam �
+epic gamesEpic �
+Epic �
+Epic �
+node_modules�
+npm install �
+.nuget/packagesNuGet �
+.NET �
+.m2/repositoryMaven �
+Java �
+.gradle/cachesGradle �
+Android/Java �
+go/pkg/modGo �
+Go �
+go clean -modcache �
+yarn/cacheYarn �
+Node.js �
+pnpmpnpm �
+pnpm �
+huggingfaceHuggingFace AI �
+AI �
+GB�
+.ollamaOllama �
+ollama rm �
+conda/pkgsconda �
+conda clean -p �
+miniconda3/pkgsdocker/wslDocker �
+Docker �
+Docker Desktop �
+d3dscacheDirectX �
+/�
+crashdumps�
+windows/werWindows �
+nvidia/dxcache�
+NVIDIA �
+nvidia/glcache$windows.~bt�
+Windows �
+onedrivetempOneDrive �
+OneDrive �
+miniconda3Miniconda �
+Python �
+Python �
+.cargoRust �
+Rust �
+cargo cache �
+.rustupRust �
+Rust �
+Rust �
+downloads�
+desktop�
+documents�
+OneDrive �
+OneDrive �
+pictures�
+videos�
+program files (x86)�
+(32 �
+)�
+32 �
+program files�
+programdata/cocosCocos Creator �
+Cocos Creator �
+programdata�
+$recycle.bin�
+system volume information�
+users�
+�u}@
+�u}@
+u}@
+v}@
+v}@
+�v}@
+Sw}@
+dw}@
+xw}@
+�w}@
+x}@
+x}@
+Mx}@
+]x}@
+zx}@
+x}@
+�x}@
+�x}@
+Gy}@
+Sy}@
+ey}@
+y}@
+y}@
+y}@
+�y}@
+y}@
+z}@
+z}@
+�z}@
+�z}@
+{}@
+{}@
+{}@
+�{}@
+{}@
+|}@
+o|}@
+{|}@
+|}@
+}}@
+}}@
+)}}@
+t}}@
+}}@
+}}@
+}}@
+~}@
+~}@
+k~}@
+~~}@
+~}@
+�~}@
+~}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@
+}@

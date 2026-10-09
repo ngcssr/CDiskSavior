@@ -1,0 +1,34 @@
+# 统一换行策略：仓库内存 LF，工作区按平台自动转换
+* text=auto eol=lf
+
+# 强制文本
+*.rs    text eol=lf
+*.ts    text eol=lf
+*.tsx   text eol=lf
+*.js    text eol=lf
+*.json  text eol=lf
+*.css   text eol=lf
+*.md    text eol=lf
+*.toml  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.nsi   text eol=lf
+
+# 二进制（不参与换行转换与 diff 文本化）
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.icns  binary
+*.bmp   binary
+*.exe   binary
+*.dll   binary
+*.pdb   binary
+*.7z    binary
+*.tar.gz binary
+
+# 第三方 vendored 源码在 GitHub 语言统计中不计入本项目
+源码/ linguist-vendored
+rev/frontend/ linguist-vendored
+rev/out/ linguist-vendored

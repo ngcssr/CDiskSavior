@@ -1,0 +1,219 @@
+// ============================================================================
+// 类型定义 - 与Rust后端数据结构对应
+// ============================================================================
+
+/** 垃圾文件分类 */
+export type JunkCategory =
+  | 'WindowsTemp'
+  | 'SystemCache'
+  | 'BrowserCache'
+  | 'RecycleBin'
+  | 'WindowsUpdate'
+  | 'DeliveryOptimization'
+  | 'WindowsDefenderCache'
+  | 'ThumbnailCache'
+  | 'LogFiles'
+  | 'MemoryDump'
+  | 'OldWindowsInstallation'
+  | 'AppCache'
+  | 'FontCache'
+  | 'WindowsErrorReports'
+  | 'InstallerTemp'
+  | 'ClipboardCache'
+  | 'ShaderCache';
+
+/** 单个文件信息 */
+export interface FileInfo {
+  /** 文件完整路径 */
+  path: string;
+  /** 文件名 */
+  name: string;
+  /** 文件大小（字节） */
+  size: number;
+  /** 文件被删除前的原始路径（仅回收站条目有值） */
+  original_path?: string | null;
+  /** 最后修改时间（Unix时间戳） */
+  modified_time: number;
+  /** 是否为目录 */
+  is_dir: boolean;
+  /** 所属分类 */
+  category: JunkCategory;
+}
+
+/** 分类扫描结果 */
+export interface CategoryScanResult {
+  /** 分类 */
+  category: JunkCategory;
+  /** 分类显示名称 */
+  display_name: string;
+  /** 分类描述 */
+  description: string;
+  /** 风险等级 */
+  risk_level: number;
+  /** 是否由系统托管：为 true 时不提供直接删除，只引导用户使用系统磁盘清理 */
+  system_managed: boolean;
+  /** 该分类下的所有文件 */
+  files: FileInfo[];
+  /** 总大小（字节） */
+  total_size: number;
+  /** 文件数量 */
+  file_count: number;
+  /** 深度扫描是否还有未加载的文件 */
+  has_more?: boolean;
+}
+
+/** 完整扫描结果 */
+export interface ScanResult {
+  /** 各分类的扫描结果 */
+  categories: CategoryScanResult[];
+  /** 总大小（字节） */
+  total_size: number;
+  /** 总文件数量 */
+  total_file_count: number;
+  /** 扫描耗时（毫秒） */
+  scan_duration_ms: number;
+  /** 扫描时间戳 */
+  scan_timestamp: number;
+}
+
+/** 深度垃圾扫描的分区摘要。 */
+export interface DeepJunkDriveSummary {
+  drive_letter: string;
+  file_system: string;
+  backend: 'mft' | 'walkdir';
+  matched_file_count: number;
+  matched_size: number;
+  warning?: string | null;
+}
+
+/** 深度垃圾扫描结果，分类文件结构与普通扫描保持一致。 */
+export interface DeepJunkScanResult extends ScanResult {
+  scan_mode: 'deep';
+  scan_id: string;
+  drives: DeepJunkDriveSummary[];
+}
+
+/** 深度垃圾扫描阶段进度。 */
+export interface DeepJunkScanProgress {
+  stage: string;
+  drive_letter: string;
+  message: string;
+  processed: number;
+  matched_count: number;
+  elapsed_ms: number;
+}
+
+/** 垃圾清理删除阶段的批量进度事件。 */
+export interface EnhancedDeleteProgress {
+  /** 当前阶段：准备中或清理中。核验由前端在命令完成后单独展示。 */
+  phase: 'preparing' | 'cleaning';
+  /** 已处理的文件数量。 */
+  processed_count: number;
+  /** 去重后的待处理文件总数。 */
+  total_count: number;
+  /** 已成功删除的文件数量。 */
+  success_count: number;
+  /** 已失败的文件数量。 */
+  failed_count: number;
+  /** 已标记为重启删除的文件数量。 */
+  reboot_pending_count: number;
+  /** 已确认释放的物理空间。 */
+  freed_physical_size: number;
+  /** 后端删除耗时（毫秒）。 */
+  elapsed_ms: number;
+}
+
+/** 删除结果 */
+export interface DeleteResult {
+  /** 成功删除的文件数 */
+  success_count: number;
+  /** 删除失败的文件数 */
+  failed_count: number;
+  /** 标记为重启后删除的文件数 */
+  reboot_pending_count: number;
+  /** 释放的空间大小（字节） */
+  freed_size: number;
+  /** 是否需要重启完成清理 */
+  needs_reboot: boolean;
+  /** 失败的文件列表及原因 */
+  failed_files: DeleteError[];
+}
+
+/** 删除错误信息 */
+export interface DeleteError {
+  /** 文件路径 */
+  path: string;
+  /** 错误原因 */
+  reason: string;
+}
+
+/** 磁盘信息 */
+export interface DiskInfo {
+  /** 磁盘总容量（字节） */
+  total_space: number;
+  /** 已用空间（字节） */
+  used_space: number;
+  /** 可用空间（字节） */
+  free_space: number;
+  /** 使用百分比 */
+  usage_percent: number;
+  /** 磁盘盘符 */
+  drive_letter: string;
+}
+
+/** 分类信息 */
+export interface CategoryInfo {
+  /** 分类名称 */
+  name: string;
+  /** 分类描述 */
+  description: string;
+  /** 风险等级 */
+  risk_level: number;
+}
+
+/** 扫描请求参数 */
+export interface ScanRequest {
+  /** 要扫描的分类列表 */
+  categories?: string[];
+}
+
+/** 删除请求参数 */
+export interface DeleteRequest {
+  /** 要删除的文件路径列表 */
+  paths: string[];
+}
+
+/** 大文件扫描结果条目 */
+export interface LargeFileEntry {
+  /** 文件路径 */
+  path: string;
+  /** 文件大小（字节） */
+  size: number;
+  /** 最后修改时间（Unix时间戳，秒） */
+  modified: number;
+  /** 风险等级 (1-5)，由后端路径规则计算 */
+  risk_level: number;
+  /** 来源标签（如"微信文件"、"虚拟机磁盘"、"系统临时文件"） */
+  source_label: string;
+}
+
+/** 大文件扫描进度事件负载 */
+export interface LargeFileScanProgress {
+  /** 当前正在扫描的文件路径 */
+  current_path: string;
+  /** 已扫描的文件数 */
+  scanned_count: number;
+  /** 当前 Top N 已收集的文件数 */
+  found_count: number;
+  /** 扫描引擎: "mft" | "walkdir" */
+  backend: string;
+  /** MFT 扫描阶段，用于定位耗时瓶颈 */
+  stage?: string;
+  /** 后端阶段说明 */
+  message?: string;
+  /** 后端已耗时（毫秒） */
+  elapsed_ms?: number;
+}
+
+/** 应用状态 */
+export type AppStatus = 'idle' | 'scanning' | 'deleting';

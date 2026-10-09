@@ -1,0 +1,101 @@
+screenplugin:window|is_maximizableplugin:window|is_maximizedplugin:window|is_minimizableplugin:window|is_minimizedplugin:window|is_resizableplugin:window|is_visibleplugin:window|monitor_from_pointplugin:window|outer_positionplugin:window|outer_sizeplugin:window|primary_monitorplugin:window|scale_factorplugin:window|scene_identifierplugin:window|themeplugin:window|titlepathhttps://github.com/**LOCALAPPDATAAPPDATATemptemp�
+(Temp)�
+Windows �
+safenpm-cachenpm �
+Node.js �
+pipcachepip-cachepip �
+Python �
+updaters�
+*-updater �
+KingsoftWPS Officewps-old-versionsWPS �
+WPS Office �
+WPS �
+MicrosoftEdgeUser DataDefaultGoogleChrome360Chrome360ChromeXCentBrowserQuark360se6browser-cache�
+(Edge/Chrome/360�
+/�
+)�
+Service Worker �
+JetBrainsjetbrains-cacheJetBrains IDE �
+IDEA/PyCharm �
+IDE �
+IDE �
+cautionJianyingProCachejianying-cache�
+ms-playwrightms-playwright-goms-playwright-mcpplaywright-browsersPlaywright �
+Playwright �
+MB �
+/AI �
+dingtalkCode CacheGPUCachedingtalk-cache�
+uvuv-cacheuv �
+Python �
+uv �
+D3DSCacheNVIDIADXCacheGLCacheAMDDxCacheDxcCacheRadeonsoftwareAMDRSSrcExtPPCSteamhtmlcacheShaderCachegpu-cache�
+DirectX/�
+/�
+androidstudiologtmpandroidstudio-logsAndroid Studio �
+Android Studio �
+SDK �
+SynologyDrivedatasynology-logsSynology Drive �
+CrashDumpsWindowsWERcrash-reports�
+Windows �
+OneDrivelogsonedrive-logsOneDrive �
+OneDrive �
+OneDrive �
+sogoupdfsogoupdf-logs�
+PDF �
+PDF �
+MeituMTXXAgentMTXXPCLXiuXiumeitu-cache�
+PC �
+WondersharepdfelementpdfthumbnailLogwondershare-logs�
+PDF �
+PDFelement �
+Yarnpnpmstorepnpm-cachejs-pkg-cacheYarn/pnpm �
+Node.js �
+pnpm �
+Doubaodoubao-shadercache�
+AI �
+MiKTeXfontconfigmiktexmiktex-cacheMiKTeX �
+LaTeX �
+MiKTeX �
+MiKTeX �
+OriginLabTMPoriginlab-tempOrigin �
+OriginLab �
+TeamViewerLogsteamviewer-logsTeamViewer �
+TeamViewer �
+Service Worker\CacheStorageService Worker\ScriptCacheUSERPROFILE.gradlecachesgradle-cacheGradle �
+Android/Java �
+.nugetpackagesnuget-cacheNuGet �
+.NET �
+.m2repositorymaven-cacheMaven �
+Java �
+(.m2)�
+.cachehuggingfacehf-cacheHuggingFace AI �
+AI �
+GB�
+.cargoregistrycargo-cachecargo �
+Rust �
+cargo �
+crate �
+IDMDwnlDataidm-dwnldataIDM �
+IDM �
+/�
+NeatDMneatdm-cacheNeatDM �
+Neat Download Manager �
+CachedDatavscode-cacheVS Code �
+VS Code �
+VS Code �
+Media Cache FilesMedia Cacheadobe-media-cacheAdobe �
+(Pr/Ae)Premiere/After Effects �
+Cache2adobe-cameraraw-cacheAdobe CameraRaw �
+Photoshop/Lightroom �
+RAW �
+RAW �
+AdobeCameraRawadobe photoshopsettingsweb-cache-tempCT Font CacheLightroomCachesadobe-app-cacheAdobe �
+(PS/LR)Photoshop/Lightroom �
+GPU �
+Adobe �
+kingsoftoffice6PDFwpsphoto+kupdateUIwpsofficewps-cacheWPS �
+WPS Office �
+WPS �
+iSlideiSlide Toolsislide-logsiSlide PPT �
+iSlide PowerPoint �
+dumpsSpiritCityPalManorLordsTslGameNRCSavedDaedalic Entertainment GmbHShadowTacticsBladesoftheShogunSlayTheSpire2Paradox Interactivelauncher-v2game-logs�

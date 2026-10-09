@@ -1,0 +1,57 @@
+跗×
+ddplmnzvwx̀Ɂ|(((|((|(((|(|(|(|(|(|(|(|(((V*A)A)*A)6*])])*)
+9888x9b988&=&=&=&=&=&=&=&=&=&=&=&=/=&=/=&=&==&==G=
+ba{c7c7ccTcce]e]eeweessssssuuuuu#vJ9v1eYᴚ@ÚÚÚÚ
+333333?
+Affffff?
+B/rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library\core\src\str\pattern.rs
+Error
+[internal exception] blocking task ran twice.C:\Users\l3268\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tokio-1.53.1\src\runtime\blocking\task.rs
+}falsetruefewer elements in map
+map with a single key
+string or map
+C:\Users\l3268\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ntfs-reader-0.4.5\src\aligned_reader.rs
+tauri://localhostdisk-butler-svc.exe找不到扫描服务程序（disk-butler-svc.exe）''
+Start-Process -FilePath '?' -ArgumentList 'install' -Verb RunAs -Wait -WindowStyle Hidden
+powershell-NoProfile-Command修复未完成（可能取消了管理员授权），请重试
+启动提权进程失败：
+定位程序路径失败：
+无法定位安装目录root
+服务连接中断typeprogresserrormessage服务扫描失败treefilesScannedbytesScannedpercentphase
+读取服务响应失败：
+解析扫描结果失败：
+发送扫描请求失败：
+服务响应格式错误：
+DiskButlerScanSvc\\.\pipe\disk-butler-scan扫描服务已拉起但管道未就绪扫描服务启动失败
+连接服务管理器失败：
+扫描服务未安装：
+scan-cache-
+.json
+scannedAthkcu-run用户注册表hklm-run系统注册表APPDATAuser-folder启动文件夹ProgramDatacommon-folder公共启动文件夹desktop.ini.lnkSOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder
+SOFTWARE\Microsoft\Windows\CurrentVersion\Runsrc\startup.rs
+SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\RunMicrosoft\Windows\Start Menu\Programs\StartUpMicrosoft\Windows\Start Menu\Programs\Startup / -::无效的启动项类型无效的启动项标识.exeidnamecommandlocationenabledneedsAdminmemMbadvicereasonicon
+ctfmonsecurityhealthrtkaudrealtekhipssysdiaghuorong360everythingsnipastedittoautolaunch--no-startup-windowpdf24baomihuaidmanidmonboot-updaterupdate.exedingtalkdingdingqqntqq.exeweixinwechatonedrivesynologytailscaleneutral未收录的启动项。若不认识且路径可疑，建议先查证再决定；禁用是可逆的。异地组网工具。常用远程访问则保留，否则用时手动开。群晖同步客户端。依赖 NAS 自动备份则保留。OneDrive 云同步。依赖它自动备份文件就保留，否则可禁用改手动。微信。依赖开机即收消息就保留，否则可禁用。QQ。不需要开机自动登录可禁用，随时手动打开。钉钉。上班依赖它就保留；否则禁用后用时手动打开，开机可省 300~500 MB。disable软件更新器，软件启动时会自行检查更新，无需常驻。IDM 下载器。浏览器点下载时会通过插件自动唤起，无需开机自启。网易爆米花视频软件，一般无需开机自启。PDF 工具托盘，用的时候手动打开即可。浏览器开机预加载，纯为抢首次启动速度，禁用后首次打开慢 1~2 秒，可省数百 MB 内存。keep轻量常用小工具，占用很小，保留不亏。文件秒搜工具，常驻占用很小，常用建议保留。安全软件组件，安全防护建议保留。声卡驱动服务，禁用可能影响音频功能。Windows 安全中心，安全防护相关，建议保留。输入法核心组件，禁用后可能无法打字。
+修改失败：
+需要管理员权限：请右键以管理员身份运行本程序后再修改系统级启动项。正在统计文件# AppData 孤儿残留目录映射知识库（目录名|软件人话名|在装匹配别名,逗号分隔|警示语,可选）
+# 入库标准（宁漏报不误报）：
+#   1. 目录名 = 单一软件专属，无跨软件/厂商复用（Google/Tencent/Kingsoft 等厂商级目录永不入库）；
+#   2. 软件为安装器分发（绿色/便携常客如 Snipaste/Everything 不入库——无注册表条目会被误判孤儿）；
+#   3. 目录内容以缓存/配置为主；含用户资产但云端有同步保留的，须带第 4 字段警示语
+#      （UI 会在条目下方醒目展示，引导用户先打开位置确认再删）；
+#      纯本地用户资产（剪映草稿、Postman workspace、聊天记录类）仍然绝不入库。
+# 别名用于"在装判定"：任一别名命中任何在装软件的名称/发行商/安装路径 → 视为有主，绝不判孤儿。
+# 案例记录（2026-07-30 真机实证）：pcsuite（vivo办公套件）data\Note 有 2GB 云笔记同步文档，
+#   经用户拍板按"云端有保留"入库，但必须带警示语；同类手机助手目录照此办理，警示语不可省。
+Doubao|豆包|doubao,豆包
+iQIYI Video|爱奇艺|iqiyi,爱奇艺
+Zoom|Zoom|zoom
+Notion|Notion|notion
+Figma|Figma|figma
+discord|Discord|discord
+Slack|Slack|slack
+Spotify|Spotify|spotify
+GeoGebra|GeoGebra|geogebra
+GeoGebra_CAS|GeoGebra CAS 计算器|geogebra
+LyX|LyX|lyx
+obsidian|Obsidian|obsidian
+pcsuite|vivo 办公套件|vivo,pcsuite,办公套件|里面有云笔记同步下来的文档和录音，一般 vivo 云端有保留；但如有只存在这台电脑

@@ -1,0 +1,319 @@
+// ============================================================================
+// 文件信息结构定义
+// 用于存储扫描到的文件详细信息
+// ============================================================================
+
+use super::JunkCategory;
+use serde::{Deserialize, Serialize};
+
+/// 单个文件的详细信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileInfo {
+    /// 文件完整路径
+    pub path: String,
+    /// 文件名
+    pub name: String,
+    /// 文件大小（字节）
+    pub size: u64,
+    /// 文件被删除前的原始路径（仅回收站条目有值）
+    pub original_path: Option<String>,
+    /// 最后修改时间（Unix时间戳）
+    pub modified_time: i64,
+    /// 是否为目录
+    pub is_dir: bool,
+    /// 所属分类
+    pub category: JunkCategory,
+}
+
+impl FileInfo {
+    /// 创建新的文件信息
+    pub fn new(
+        path: String,
+        name: String,
+        size: u64,
+        modified_time: i64,
+        is_dir: bool,
+        category: JunkCategory,
+    ) -> Self {
+        FileInfo {
+            path,
+            name,
+            size,
+            original_path: None,
+            modified_time,
+            is_dir,
+            category,
+        }
+    }
+
+    /// 记录回收站元数据中的原始路径，供界面提示用户文件来源。
+    pub fn with_original_path(mut self, original_path: String) -> Self {
+        self.original_path = Some(original_path);
+        self
+    }
+
+    /// 获取人类可读的文件大小
+    pub fn human_readable_size(&self) -> String {
+        format_size(self.size)
+    }
+}
+
+/// 分类扫描结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CategoryScanResult {
+    /// 分类
+    pub category: JunkCategory,
+    /// 分类显示名称
+    pub display_name: String,
+    /// 分类描述
+    pub description: String,
+    /// 风险等级
+    pub risk_level: u8,
+    /// 是否由系统托管。为 true 时前端不提供直接删除，只引导用户使用系统磁盘清理 ——
+    /// 这类目录（如 Windows.old）应用内删不掉，而且是系统的回退数据。
+    pub system_managed: bool,
+    /// 该分类下的所有文件
+    pub files: Vec<FileInfo>,
+    /// 总大小（字节）
+    pub total_size: u64,
+    /// 文件数量
+    pub file_count: usize,
+    /// 深度扫描分页标记；快速扫描始终为 false。
+    pub has_more: bool,
+}
+
+impl CategoryScanResult {
+    /// 创建新的分类扫描结果
+    pub fn new(category: JunkCategory) -> Self {
+        CategoryScanResult {
+            display_name: category.display_name().to_string(),
+            description: category.description().to_string(),
+            risk_level: category.risk_level(),
+            system_managed: category.is_system_managed(),
+            category,
+            files: Vec::new(),
+            total_size: 0,
+            file_count: 0,
+            has_more: false,
+        }
+    }
+
+    /// 添加文件到结果中
+    pub fn add_file(&mut self, file: FileInfo) {
+        self.total_size += file.size;
+        self.file_count += 1;
+        self.files.push(file);
+    }
+
+    /// 获取人类可读的总大小
+    pub fn human_readable_total_size(&self) -> String {
+        format_size(self.total_size)
+    }
+
+    /// 按文件大小倒序排列：占用空间最大的排在最前，便于用户优先处理。
+    ///
+    /// 中文说明：
+    /// 交叉来源（快速扫描的并行线程、深度扫描的多分区合并、回收站扫描）产生的文件顺序
+    /// 由遍历顺序和线程完成顺序决定，对用户没有意义。这里统一收敛为“大小倒序 + 路径升序”：
+    /// 大小相同时按路径排序，保证同一份扫描结果每次展示顺序一致，也保证深度扫描分页时
+    /// 首屏就是最大的文件，不需要为排序额外遍历全部分类。
+    pub fn sort_files_by_size_desc(&mut self) {
+        self.files.sort_by(|left, right| {
+            right
+                .size
+                .cmp(&left.size)
+                .then_with(|| left.path.cmp(&right.path))
+        });
+    }
+}
+
+/// 完整扫描结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanResult {
+    /// 各分类的扫描结果
+    pub categories: Vec<CategoryScanResult>,
+    /// 总大小（字节）
+    pub total_size: u64,
+    /// 总文件数量
+    pub total_file_count: usize,
+    /// 扫描耗时（毫秒）
+    pub scan_duration_ms: u64,
+    /// 扫描时间戳
+    pub scan_timestamp: i64,
+}
+
+impl ScanResult {
+    /// 创建新的扫描结果
+    pub fn new() -> Self {
+        ScanResult {
+            categories: Vec::new(),
+            total_size: 0,
+            total_file_count: 0,
+            scan_duration_ms: 0,
+            scan_timestamp: chrono::Utc::now().timestamp(),
+        }
+    }
+
+    /// 添加分类结果
+    pub fn add_category_result(&mut self, result: CategoryScanResult) {
+        self.total_size += result.total_size;
+        self.total_file_count += result.file_count;
+        self.categories.push(result);
+    }
+
+    /// 设置扫描耗时
+    pub fn set_duration(&mut self, duration_ms: u64) {
+        self.scan_duration_ms = duration_ms;
+    }
+
+    /// 获取人类可读的总大小
+    pub fn human_readable_total_size(&self) -> String {
+        format_size(self.total_size)
+    }
+}
+
+impl Default for ScanResult {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// 扫描进度信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanProgress {
+    /// 当前正在扫描的分类
+    pub current_category: String,
+    /// 已完成的分类数
+    pub completed_categories: usize,
+    /// 总分类数
+    pub total_categories: usize,
+    /// 当前分类已扫描的文件数
+    pub current_file_count: usize,
+    /// 当前分类已扫描的大小
+    pub current_size: u64,
+    /// 进度百分比 (0-100)
+    pub progress_percent: f32,
+}
+
+impl ScanProgress {
+    /// 创建新的进度信息
+    pub fn new(total_categories: usize) -> Self {
+        ScanProgress {
+            current_category: String::new(),
+            completed_categories: 0,
+            total_categories,
+            current_file_count: 0,
+            current_size: 0,
+            progress_percent: 0.0,
+        }
+    }
+
+    /// 更新当前分类
+    pub fn set_current_category(&mut self, category: &str) {
+        self.current_category = category.to_string();
+        self.current_file_count = 0;
+        self.current_size = 0;
+    }
+
+    /// 完成一个分类
+    pub fn complete_category(&mut self) {
+        self.completed_categories += 1;
+        self.progress_percent =
+            (self.completed_categories as f32 / self.total_categories as f32) * 100.0;
+    }
+
+    /// 更新当前分类的扫描进度
+    pub fn update_current(&mut self, file_count: usize, size: u64) {
+        self.current_file_count = file_count;
+        self.current_size = size;
+    }
+}
+
+/// 格式化文件大小为人类可读格式
+pub fn format_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+
+    if bytes >= GB {
+        format!("{:.2} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.2} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.2} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes)
+    }
+}
+
+/// 删除操作结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteResult {
+    /// 成功删除的文件数
+    pub success_count: usize,
+    /// 删除失败的文件数
+    pub failed_count: usize,
+    /// 标记为重启后删除的文件数
+    pub reboot_pending_count: usize,
+    /// 释放的空间大小（字节）—— **只统计真正释放掉的**，不包含等重启的部分
+    pub freed_size: u64,
+    /// 标记为"重启后删除"的文件总大小 —— 这些文件此刻并没有释放磁盘空间
+    pub reboot_pending_size: u64,
+    /// 是否需要重启完成清理
+    pub needs_reboot: bool,
+    /// 失败的文件列表及原因
+    pub failed_files: Vec<DeleteError>,
+}
+
+impl DeleteResult {
+    /// 创建新的删除结果
+    pub fn new() -> Self {
+        DeleteResult {
+            success_count: 0,
+            failed_count: 0,
+            reboot_pending_count: 0,
+            freed_size: 0,
+            reboot_pending_size: 0,
+            needs_reboot: false,
+            failed_files: Vec::new(),
+        }
+    }
+
+    /// 记录成功删除
+    pub fn add_success(&mut self, size: u64) {
+        self.success_count += 1;
+        self.freed_size += size;
+    }
+
+    /// 记录重启后删除
+    pub fn add_reboot_pending(&mut self, size: u64) {
+        self.reboot_pending_count += 1;
+        self.needs_reboot = true;
+        // 这些文件要重启后才真正删除，**此刻磁盘空间并没有释放**。
+        // 之前把它们的完整大小也加进 freed_size，导致"提示已释放好几 G、实际只释放 1 G 多"。
+        // 现在单独累计；是否需要重启已经由 needs_reboot / reboot_pending_count 表达，
+        // 界面上的"重启后释放"提示继续生效，只是"已释放"这个数字不再虚高。
+        self.reboot_pending_size += size;
+    }
+
+    /// 记录删除失败
+    pub fn add_failure(&mut self, path: String, reason: String) {
+        self.failed_count += 1;
+        self.failed_files.push(DeleteError { path, reason });
+    }
+}
+
+impl Default for DeleteResult {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// 删除错误信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteError {
+    /// 文件路径
+    pub path: String,
+    /// 错误原因
+    pub reason: String,
+}

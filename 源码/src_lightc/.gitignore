@@ -1,0 +1,43 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+/CLAUDE.*
+/.claude
+.workbuddy
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Tauri signing keys (KEEP PRIVATE!)
+.tauri/update.key
+.tauri/*.key
+build.sh
+build.ps1
+
+/src-tauri/~/.tauri
+
+update.md
+release.ps1
+/docs
+/dist_release
+
+# i18n 审计脚本的机器可读输出（每次运行都会重写，仅供本地排查用）
+.i18n-audit.json

@@ -1,0 +1,40 @@
+# ---- 构建产物 ----
+node_modules/
+dist/
+src-tauri/target/
+target/
+*.exe
+*.msi
+*.nsis
+
+# ---- 下载的源码包（可由 scripts/fetch_sources 重新获取）----
+*.tar.gz
+*.tgz
+*.zip
+*.7z
+
+# ---- rev/ 下的第三方源码重复副本（权威副本在 源码/）----
+rev/src0*/
+rev/src_lightc/
+rev/src_wclear/
+
+# ---- 第三方仓库的大型设计资产（宣传海报，与合并工作无关）----
+源码/src078/docs/brand/*.png
+源码/src078/docs/brand/**/*.png
+源码/src_lightc/public/*.png
+
+# ---- 工具状态（WorkBuddy 会话/记忆，非工程源码）----
+.workbuddy/
+
+# ---- 运行时/临时 ----
+.tmp/
+tmp/
+*.log
+__pycache__/
+.venv/
+envs/
+
+# ---- 编辑器 ----
+.idea/
+*.swp
+*~

@@ -1,0 +1,1176 @@
+// ============================================================================
+// 增强删除引擎 - 处理锁定文件和权限问题
+//
+// 核心功能：
+// 1. Take Ownership - 获取文件所有权以删除受保护文件
+// 2. Delete on Reboot - 使用 MOVEFILE_DELAY_UNTIL_REBOOT 处理锁定文件
+// 3. 物理大小计算 - 返回实际释放的磁盘空间
+//
+// 安全机制：
+// - 严格的白名单路径检查，只在安全目录执行 Take Ownership
+// - 系统关键文件绝对禁止删除
+// - 详细的删除结果反馈，包括跳过原因
+// ============================================================================
+
+use std::collections::{BTreeMap, HashMap};
+use std::fs;
+use std::io;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+use std::path::Path;
+use std::process::Command;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+use log::{debug, info, warn};
+use serde::{Deserialize, Serialize};
+
+use super::safety_constants::is_rebuildable_system_cache_path;
+
+// ============================================================================
+// Windows API 绑定
+// ============================================================================
+
+#[cfg(windows)]
+pub(crate) mod windows_api {
+    use std::ptr;
+
+    // MoveFileEx 标志
+    pub const MOVEFILE_DELAY_UNTIL_REBOOT: u32 = 0x00000004;
+    pub const MOVEFILE_REPLACE_EXISTING: u32 = 0x00000001;
+
+    // 文件属性常量
+    pub const FILE_ATTRIBUTE_READONLY: u32 = 0x00000001;
+    pub const FILE_ATTRIBUTE_HIDDEN: u32 = 0x00000002;
+    pub const FILE_ATTRIBUTE_SYSTEM: u32 = 0x00000004;
+
+    // SHEmptyRecycleBin 标志
+    pub const SHERB_NOCONFIRMATION: u32 = 0x00000001;
+    pub const SHERB_NOPROGRESSUI: u32 = 0x00000002;
+    pub const SHERB_NOSOUND: u32 = 0x00000004;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        /// 标记文件在重启时删除
+        ///
+        /// # 安全说明
+        /// 此函数使用 MOVEFILE_DELAY_UNTIL_REBOOT 标志将文件标记为重启时删除。
+        /// 这是 Windows 系统存储感知（Storage Sense）处理被锁定文件的标准方式。
+        ///
+        /// # 参数
+        /// - lpExistingFileName: 要删除的文件路径（宽字符）
+        /// - lpNewFileName: 目标路径，设为 NULL 表示删除
+        /// - dwFlags: 操作标志，使用 MOVEFILE_DELAY_UNTIL_REBOOT
+        pub fn MoveFileExW(
+            lpExistingFileName: *const u16,
+            lpNewFileName: *const u16,
+            dwFlags: u32,
+        ) -> i32;
+
+        /// 获取文件属性
+        pub fn GetFileAttributesW(lpFileName: *const u16) -> u32;
+
+        /// 设置文件属性
+        pub fn SetFileAttributesW(lpFileName: *const u16, dwFileAttributes: u32) -> i32;
+
+        /// 获取最后的错误代码
+        pub fn GetLastError() -> u32;
+
+        /// 获取磁盘空闲空间（用于计算簇大小）
+        pub fn GetDiskFreeSpaceW(
+            lpRootPathName: *const u16,
+            lpSectorsPerCluster: *mut u32,
+            lpBytesPerSector: *mut u32,
+            lpNumberOfFreeClusters: *mut u32,
+            lpTotalNumberOfClusters: *mut u32,
+        ) -> i32;
+    }
+
+    #[link(name = "shell32")]
+    extern "system" {
+        /// 清空回收站（Windows Shell API）
+        ///
+        /// # 参数
+        /// - hwnd: 父窗口句柄，通常为 null
+        /// - pszRootPath: 指定驱动器根路径，null 表示清空所有驱动器的回收站
+        /// - dwFlags: 控制标志，组合使用 SHERB_NOCONFIRMATION | SHERB_NOPROGRESSUI | SHERB_NOSOUND
+        ///
+        /// # 返回值
+        /// S_OK (0) 表示成功，否则为 HRESULT 错误码
+        pub fn SHEmptyRecycleBinW(hwnd: *const u16, pszRootPath: *const u16, dwFlags: u32) -> i32;
+    }
+
+    /// 将 Rust 字符串转换为 Windows 宽字符串
+    pub fn to_wide_string(s: &str) -> Vec<u16> {
+        use std::os::windows::ffi::OsStrExt;
+        std::ffi::OsStr::new(s)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
+    }
+
+    /// 标记文件在重启时删除
+    ///
+    /// # 中文说明
+    /// 此函数使用 Windows API MoveFileExW 配合 MOVEFILE_DELAY_UNTIL_REBOOT 标志，
+    /// 将被锁定的文件标记为"重启时删除"。这是 Windows 系统存储感知处理顽固文件的标准方式。
+    ///
+    /// 工作原理：
+    /// 1. 调用 MoveFileExW，目标路径设为 NULL
+    /// 2. Windows 将此操作记录到注册表 PendingFileRenameOperations
+    /// 3. 下次系统启动时，在用户登录前执行删除操作
+    ///
+    /// 安全考虑：
+    /// - 只对已通过安全检查的文件执行此操作
+    /// - 系统关键文件绝对禁止使用此功能
+    /// - 用户会收到"需要重启完成清理"的提示
+    pub fn mark_for_delete_on_reboot(path: &str) -> Result<(), String> {
+        let wide_path = to_wide_string(path);
+
+        unsafe {
+            let result = MoveFileExW(
+                wide_path.as_ptr(),
+                ptr::null(), // NULL 表示删除而非移动
+                MOVEFILE_DELAY_UNTIL_REBOOT,
+            );
+
+            if result != 0 {
+                Ok(())
+            } else {
+                let error_code = GetLastError();
+                Err(format!("标记重启删除失败，错误代码: {}", error_code))
+            }
+        }
+    }
+
+    /// 移除文件的只读、隐藏、系统属性
+    pub fn remove_protection_attributes(path: &str) -> Result<(), String> {
+        let wide_path = to_wide_string(path);
+
+        unsafe {
+            let attrs = GetFileAttributesW(wide_path.as_ptr());
+            if attrs == u32::MAX {
+                return Err("无法获取文件属性".to_string());
+            }
+
+            // 移除只读、隐藏、系统属性
+            let new_attrs =
+                attrs & !(FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
+
+            if new_attrs != attrs {
+                let result = SetFileAttributesW(wide_path.as_ptr(), new_attrs);
+                if result == 0 {
+                    return Err("无法修改文件属性".to_string());
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 获取磁盘簇大小（用于计算物理占用）
+    pub fn get_cluster_size(root_path: &str) -> Option<u32> {
+        let wide_path = to_wide_string(root_path);
+        let mut sectors_per_cluster: u32 = 0;
+        let mut bytes_per_sector: u32 = 0;
+        let mut free_clusters: u32 = 0;
+        let mut total_clusters: u32 = 0;
+
+        unsafe {
+            let result = GetDiskFreeSpaceW(
+                wide_path.as_ptr(),
+                &mut sectors_per_cluster,
+                &mut bytes_per_sector,
+                &mut free_clusters,
+                &mut total_clusters,
+            );
+
+            if result != 0 {
+                Some(sectors_per_cluster * bytes_per_sector)
+            } else {
+                None
+            }
+        }
+    }
+
+    /// 使用 Windows Shell API 清空回收站
+    ///
+    /// 这是清空回收站的正确方式，无需 SYSTEM 权限即可操作。
+    /// 直接删除 C:\$Recycle.Bin 下的文件会被系统拒绝（需要 SYSTEM 权限），
+    /// 也会留下元数据残留。而 SHEmptyRecycleBinW 走的是 Shell 标准流程。
+    ///
+    /// # 参数
+    /// - drive_root: 指定清空某个驱动器的回收站，传 None 清空所有驱动器
+    pub fn empty_recycle_bin(drive_root: Option<&str>) -> Result<(), String> {
+        let root_wide: Vec<u16>;
+        let root_ptr: *const u16;
+
+        if let Some(root) = drive_root {
+            root_wide = to_wide_string(root);
+            root_ptr = root_wide.as_ptr();
+        } else {
+            root_ptr = std::ptr::null();
+        }
+
+        let flags = SHERB_NOCONFIRMATION | SHERB_NOPROGRESSUI | SHERB_NOSOUND;
+
+        // HRESULT 白名单：
+        // S_OK (0) — 清空成功
+        // E_INVALIDARG (0x80070057) — 回收站原本就为空，也视为成功
+        const S_OK: i32 = 0;
+        const E_INVALIDARG: i32 = -2147024809i32;
+
+        unsafe {
+            let hresult = SHEmptyRecycleBinW(std::ptr::null(), root_ptr, flags);
+            if hresult == S_OK || hresult == E_INVALIDARG {
+                Ok(())
+            } else {
+                Err(format!("清空回收站失败，HRESULT: 0x{:08X}", hresult as u32))
+            }
+        }
+    }
+}
+
+// ============================================================================
+// 删除结果类型
+// ============================================================================
+
+/// 删除失败的原因分类
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum DeleteFailureReason {
+    /// 文件不存在
+    NotFound,
+    /// 权限不足
+    PermissionDenied,
+    /// 文件被锁定（正在使用）
+    FileLocked,
+    /// 系统保护文件
+    SystemProtected,
+    /// 路径不在允许范围
+    OutOfScope,
+    /// 已标记为重启时删除
+    MarkedForReboot,
+    /// 其他错误
+    Other(String),
+}
+
+impl DeleteFailureReason {
+    /// 获取用户友好的中文描述
+    pub fn display_message(&self) -> &str {
+        match self {
+            Self::NotFound => "文件不存在",
+            Self::PermissionDenied => "权限不足",
+            Self::FileLocked => "文件被系统占用",
+            Self::SystemProtected => "系统保护文件",
+            Self::OutOfScope => "不在清理范围内",
+            Self::MarkedForReboot => "已标记重启后删除",
+            Self::Other(_) => "删除失败",
+        }
+    }
+
+    /// 获取详细的提示信息（用于 tooltip）
+    pub fn tooltip(&self) -> &str {
+        match self {
+            Self::NotFound => "该文件可能已被其他程序删除",
+            Self::PermissionDenied => "需要管理员权限才能删除此文件",
+            Self::FileLocked => "该文件正被系统或其他程序使用，将在重启后删除",
+            Self::SystemProtected => "这是系统关键文件，删除可能导致系统不稳定",
+            Self::OutOfScope => "该文件不在安全清理范围内",
+            Self::MarkedForReboot => "文件已标记，将在下次重启时自动删除",
+            Self::Other(msg) => msg.as_str(),
+        }
+    }
+}
+
+/// 单个文件的删除结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileDeleteResult {
+    /// 文件路径
+    pub path: String,
+    /// 是否成功删除
+    pub success: bool,
+    /// 逻辑大小（文件实际内容大小）
+    pub logical_size: u64,
+    /// 物理大小（实际占用磁盘空间，按簇对齐）
+    pub physical_size: u64,
+    /// 失败原因（如果失败）
+    pub failure_reason: Option<DeleteFailureReason>,
+    /// 是否标记为重启删除
+    pub marked_for_reboot: bool,
+}
+
+/// 增强版删除结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnhancedDeleteResult {
+    /// 成功删除的文件数
+    pub success_count: usize,
+    /// 失败的文件数
+    pub failed_count: usize,
+    /// 标记为重启删除的文件数
+    pub reboot_pending_count: usize,
+    /// 实际释放的物理空间（字节）
+    pub freed_physical_size: u64,
+    /// 逻辑大小总计（用于对比）
+    pub freed_logical_size: u64,
+    /// 跳过的文件大小（因错误未能删除）
+    pub skipped_size: u64,
+    /// 详细的文件删除结果
+    pub file_results: Vec<FileDeleteResult>,
+    /// 是否需要重启完成清理
+    pub needs_reboot: bool,
+    /// 汇总消息（WeChat 风格）
+    pub summary_message: String,
+    /// 清理过程的警告提示（如深度扫描会话过期导致的降级），正常删除时为 None。
+    pub warning: Option<String>,
+}
+
+/// 增强删除过程的批量进度。
+///
+/// 进度只汇总当前批次的统计，不携带文件明细，避免大批量删除时频繁向 WebView 传输大对象。
+#[derive(Debug, Clone, Serialize)]
+pub struct EnhancedDeleteProgress {
+    /// 当前阶段，删除引擎目前使用 cleaning。
+    pub phase: String,
+    /// 已处理的文件数量。
+    pub processed_count: usize,
+    /// 本次删除的去重后文件总数。
+    pub total_count: usize,
+    /// 已成功删除的文件数量。
+    pub success_count: usize,
+    /// 已失败的文件数量。
+    pub failed_count: usize,
+    /// 已标记重启删除的文件数量。
+    pub reboot_pending_count: usize,
+    /// 当前已经确认释放的物理空间。
+    pub freed_physical_size: u64,
+    /// 删除引擎启动后的耗时。
+    pub elapsed_ms: u64,
+}
+
+/// 进度事件的最大发送间隔，保证单个批次处理较慢时界面仍能持续反馈。
+const DELETE_PROGRESS_INTERVAL: Duration = Duration::from_millis(500);
+/// 常规批量进度间隔，避免每个文件发送 IPC 事件造成额外开销。
+const DELETE_PROGRESS_BATCH_SIZE: usize = 500;
+
+impl EnhancedDeleteResult {
+    pub fn new() -> Self {
+        Self {
+            success_count: 0,
+            failed_count: 0,
+            reboot_pending_count: 0,
+            freed_physical_size: 0,
+            freed_logical_size: 0,
+            skipped_size: 0,
+            file_results: Vec::new(),
+            needs_reboot: false,
+            summary_message: String::new(),
+            warning: None,
+        }
+    }
+
+    /// 生成 WeChat 风格的汇总消息
+    pub fn generate_summary(&mut self) {
+        let freed_mb = self.freed_physical_size as f64 / 1024.0 / 1024.0;
+        let skipped_mb = self.skipped_size as f64 / 1024.0 / 1024.0;
+
+        let mut parts = Vec::new();
+
+        // 成功释放部分
+        if self.freed_physical_size > 0 {
+            if freed_mb >= 1024.0 {
+                parts.push(format!("成功释放 {:.1} GB", freed_mb / 1024.0));
+            } else if freed_mb >= 1.0 {
+                parts.push(format!("成功释放 {:.1} MB", freed_mb));
+            } else {
+                parts.push(format!("成功释放 {:.0} KB", freed_mb * 1024.0));
+            }
+        }
+
+        // 跳过部分不能统一描述为“系统占用”，回收站 Shell API 失败和权限问题也会进入这里。
+        if self.skipped_size > 0 {
+            if skipped_mb >= 1.0 {
+                parts.push(format!("{:.1} MB 跳过", skipped_mb));
+            } else {
+                parts.push(format!("{:.0} KB 跳过", skipped_mb * 1024.0));
+            }
+        }
+
+        // 重启待删除部分
+        if self.reboot_pending_count > 0 {
+            parts.push(format!(
+                "{} 个文件将在重启后删除",
+                self.reboot_pending_count
+            ));
+        }
+
+        self.summary_message = if parts.is_empty() {
+            "没有文件被清理".to_string()
+        } else {
+            parts.join("，")
+        };
+    }
+}
+
+impl Default for EnhancedDeleteResult {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ============================================================================
+// 增强删除引擎
+// ============================================================================
+
+/// 允许执行 Take Ownership 的安全目录
+///
+/// # 中文说明
+/// 只有在这些目录下的文件才允许执行"获取所有权"操作。
+/// 这是为了防止误操作导致系统文件被删除。
+const SAFE_OWNERSHIP_PATHS: &[&str] = &[
+    "\\temp",
+    "\\tmp",
+    "\\cache",
+    "\\caches",
+    "\\appdata\\local\\temp",
+    "\\appdata\\local\\microsoft\\windows\\temporary internet files",
+    "\\appdata\\local\\microsoft\\windows\\inetcache",
+    "\\appdata\\local\\microsoft\\windows\\caches",
+    "\\appdata\\local\\microsoft\\windows\\explorer",
+    "\\appdata\\local\\microsoft\\windows\\webcache",
+    "\\appdata\\local\\microsoft\\windows\\clipboard",
+    // Chromium 系浏览器的 Service Worker / 媒体缓存目录，与 Cache 同级且同样可重建。
+    "\\service worker",
+    "\\media cache",
+    "\\windows\\temp",
+    // Windows 10/11 的系统级临时目录与内核崩溃报告目录，属可重建的诊断数据。
+    "\\windows\\systemtemp",
+    "\\windows\\livekernelreports",
+    "\\windows\\prefetch",
+    "\\windows\\softwaredistribution\\download",
+    "\\windows\\softwaredistribution\\deliveryoptimization",
+    "\\windows\\serviceprofiles\\networkservice\\appdata\\local\\microsoft\\windows\\deliveryoptimization",
+    "\\windows\\serviceprofiles\\localservice\\appdata\\local\\fontcache",
+    "\\programdata\\microsoft\\windows defender\\localcopy",
+    "\\programdata\\microsoft\\windows defender\\support",
+    "\\programdata\\microsoft\\windows defender\\scans\\history\\service",
+    // Windows 错误报告队列/归档：SYSTEM 与 TrustedInstaller 混占，需要允许提权删除。
+    "\\programdata\\microsoft\\windows\\wer",
+    "\\windows\\system32\\d3d_cache",
+    "\\appdata\\local\\d3dscache",
+    "\\appdata\\local\\amd\\dxcache",
+    "\\appdata\\local\\nvidia\\dxcache",
+    "\\appdata\\local\\nvidia\\glcache",
+    "\\appdata\\local\\nvidia\\dxc",
+    "\\appdata\\local\\nvidia\\computecache",
+    "\\appdata\\local\\intel\\shadercache",
+    "\\$recycle.bin",
+];
+
+// 使用内置管理员组 SID，避免中文 Windows 上的本地化组名导致 icacls 无法解析。
+const LOCAL_ADMINISTRATORS_SID: &str = "*S-1-5-32-544";
+
+/// 增强删除引擎
+pub struct EnhancedDeleteEngine {
+    /// 磁盘簇大小缓存
+    cluster_size: u32,
+    /// 多分区清理时按卷缓存簇大小，避免逐文件调用 Windows API。
+    cluster_sizes: Mutex<HashMap<String, u32>>,
+    /// 是否启用重启删除功能
+    enable_reboot_delete: bool,
+    /// 是否尝试获取所有权
+    enable_take_ownership: bool,
+}
+
+impl EnhancedDeleteEngine {
+    /// 创建新的增强删除引擎
+    pub fn new() -> Self {
+        // 获取 C 盘簇大小，默认 4096 字节
+        let cluster_size = windows_api::get_cluster_size("C:\\").unwrap_or(4096);
+
+        Self {
+            cluster_size,
+            cluster_sizes: Mutex::new(HashMap::new()),
+            enable_reboot_delete: true,   // 默认启用，处理被占用的文件
+            enable_take_ownership: false, // 默认禁用，icacls 调用很慢
+        }
+    }
+
+    /// 设置是否启用重启删除
+    pub fn with_reboot_delete(mut self, enabled: bool) -> Self {
+        self.enable_reboot_delete = enabled;
+        self
+    }
+
+    /// 设置是否启用获取所有权
+    pub fn with_take_ownership(mut self, enabled: bool) -> Self {
+        self.enable_take_ownership = enabled;
+        self
+    }
+
+    /// 计算文件的物理占用大小（按簇对齐）
+    ///
+    /// # 中文说明
+    /// 文件在磁盘上的实际占用空间是按簇（cluster）分配的。
+    /// 例如，一个 1 字节的文件在 4KB 簇大小的磁盘上实际占用 4KB。
+    /// 这个函数返回文件实际释放的磁盘空间，而非文件内容大小。
+    pub fn calculate_physical_size(&self, logical_size: u64) -> u64 {
+        if logical_size == 0 {
+            return 0;
+        }
+        let cluster_size = self.cluster_size as u64;
+        ((logical_size + cluster_size - 1) / cluster_size) * cluster_size
+    }
+
+    /// 按文件所在分区计算物理占用，避免深度清理 D/E 盘时套用 C 盘簇大小。
+    fn calculate_physical_size_for_path(&self, path: &Path, logical_size: u64) -> u64 {
+        let Some(drive_root) = drive_root(path) else {
+            return self.calculate_physical_size(logical_size);
+        };
+        let cluster_size = self.cluster_size_for_drive(&drive_root);
+        align_physical_size(logical_size, cluster_size)
+    }
+
+    fn cluster_size_for_drive(&self, drive_root: &str) -> u32 {
+        if let Ok(cache) = self.cluster_sizes.lock() {
+            if let Some(cluster_size) = cache.get(drive_root) {
+                return *cluster_size;
+            }
+        }
+
+        let cluster_size = windows_api::get_cluster_size(drive_root).unwrap_or(self.cluster_size);
+        if let Ok(mut cache) = self.cluster_sizes.lock() {
+            cache.insert(drive_root.to_string(), cluster_size);
+        }
+        cluster_size
+    }
+
+    /// 删除文件列表
+    pub fn delete_files(&self, paths: &[String]) -> EnhancedDeleteResult {
+        // 保留原有公开接口，其他模块无需感知进度事件即可继续复用删除引擎。
+        self.delete_files_with_progress(paths, |_| {})
+    }
+
+    /// 删除文件列表并按批次回调进度。
+    ///
+    /// 回调在删除线程内执行，调用方只能做轻量级通知，不能在其中执行文件 IO。
+    pub fn delete_files_with_progress<F>(
+        &self,
+        paths: &[String],
+        mut on_progress: F,
+    ) -> EnhancedDeleteResult
+    where
+        F: FnMut(EnhancedDeleteProgress),
+    {
+        let mut result = EnhancedDeleteResult::new();
+        let total_count = paths.len();
+        let started_at = Instant::now();
+        let mut processed_count = 0usize;
+        let mut last_progress_at = Instant::now();
+
+        // 删除任务刚进入执行线程时先推送一次清理阶段，避免少量文件任务看起来没有进度。
+        on_progress(EnhancedDeleteProgress {
+            phase: "cleaning".to_string(),
+            processed_count: 0,
+            total_count,
+            success_count: 0,
+            failed_count: 0,
+            reboot_pending_count: 0,
+            freed_physical_size: 0,
+            elapsed_ms: 0,
+        });
+
+        // 进度事件只传递聚合数据，避免大批量文件删除时拖慢实际清理速度。
+        let mut emit_progress = |processed: usize, current_result: &EnhancedDeleteResult| {
+            let should_emit = processed == total_count
+                || processed.saturating_sub(1) % DELETE_PROGRESS_BATCH_SIZE == 0
+                || last_progress_at.elapsed() >= DELETE_PROGRESS_INTERVAL;
+            if !should_emit {
+                return;
+            }
+
+            on_progress(EnhancedDeleteProgress {
+                phase: "cleaning".to_string(),
+                processed_count: processed,
+                total_count,
+                success_count: current_result.success_count,
+                failed_count: current_result.failed_count,
+                reboot_pending_count: current_result.reboot_pending_count,
+                freed_physical_size: current_result.freed_physical_size,
+                elapsed_ms: started_at.elapsed().as_millis() as u64,
+            });
+            last_progress_at = Instant::now();
+        };
+
+        info!("增强删除引擎：开始删除 {} 个文件", paths.len());
+
+        // 分离回收站路径：回收站文件应通过 Shell API 清空，而非逐文件删除
+        // 直接删除 $Recycle.Bin 下的文件需要 SYSTEM 权限，SHEmptyRecycleBinW 是标准方式
+        let (recycle_paths, normal_paths): (Vec<&String>, Vec<&String>) = paths
+            .iter()
+            .partition(|p| p.to_lowercase().contains("\\$recycle.bin"));
+
+        // 回收站文件无法逐文件删除，按盘符调用 Shell API，避免一个异常卷拖垮其他卷。
+        if !recycle_paths.is_empty() {
+            info!(
+                "检测到 {} 个回收站条目，按盘符调用 Shell API 清空",
+                recycle_paths.len()
+            );
+
+            // 必须在 Shell API 运行前读取大小，否则成功清空后路径已不存在，只能得到 0 字节。
+            let mut recycle_by_drive: BTreeMap<String, Vec<(String, u64, u64)>> = BTreeMap::new();
+            for path in &recycle_paths {
+                let logical_size = self.get_file_size(Path::new(path));
+                let Some(drive_root) = recycle_drive_root(path) else {
+                    let physical_size = self.calculate_physical_size(logical_size);
+                    result.failed_count += 1;
+                    result.skipped_size += physical_size;
+                    result.file_results.push(FileDeleteResult {
+                        path: (*path).clone(),
+                        success: false,
+                        logical_size,
+                        physical_size,
+                        failure_reason: Some(DeleteFailureReason::Other(
+                            "回收站路径缺少有效盘符".to_string(),
+                        )),
+                        marked_for_reboot: false,
+                    });
+                    // 非法回收站路径也算作已处理，保证进度总数在异常输入下仍能收敛到 100%。
+                    processed_count += 1;
+                    emit_progress(processed_count, &result);
+                    continue;
+                };
+                // 回收站支持多盘，物理大小必须使用条目所在卷的簇大小而不是固定 C 盘值。
+                let physical_size =
+                    align_physical_size(logical_size, self.cluster_size_for_drive(&drive_root));
+                recycle_by_drive.entry(drive_root).or_default().push((
+                    (*path).clone(),
+                    logical_size,
+                    physical_size,
+                ));
+            }
+
+            for (drive_root, entries) in recycle_by_drive {
+                // 先保存数量，因为后续分支会消费 entries 中的完整条目结果。
+                let processed_in_drive = entries.len();
+                match windows_api::empty_recycle_bin(Some(&drive_root)) {
+                    Ok(_) => {
+                        info!("Shell API 清空回收站成功: {}", drive_root);
+                        for (path, logical_size, physical_size) in entries {
+                            result.success_count += 1;
+                            result.freed_logical_size += logical_size;
+                            result.freed_physical_size += physical_size;
+                            result.file_results.push(FileDeleteResult {
+                                path,
+                                success: true,
+                                logical_size,
+                                physical_size,
+                                failure_reason: None,
+                                marked_for_reboot: false,
+                            });
+                        }
+                    }
+                    Err(error) => {
+                        warn!("Shell API 清空回收站失败 ({}): {}", drive_root, error);
+                        for (path, logical_size, physical_size) in entries {
+                            result.failed_count += 1;
+                            result.skipped_size += physical_size;
+                            result.file_results.push(FileDeleteResult {
+                                path,
+                                success: false,
+                                logical_size,
+                                physical_size,
+                                failure_reason: Some(DeleteFailureReason::Other(format!(
+                                    "清空回收站失败 ({}): {}",
+                                    drive_root, error
+                                ))),
+                                marked_for_reboot: false,
+                            });
+                        }
+                    }
+                }
+                // Shell API 按卷执行，完成一个卷后统一推进进度，避免对每个回收站元数据重复发事件。
+                processed_count += processed_in_drive;
+                emit_progress(processed_count, &result);
+            }
+        }
+
+        // 正常文件逐文件删除
+        for path in normal_paths {
+            let file_result = self.delete_single_file(path);
+
+            match &file_result.failure_reason {
+                None => {
+                    result.success_count += 1;
+                    result.freed_logical_size += file_result.logical_size;
+                    result.freed_physical_size += file_result.physical_size;
+                }
+                Some(DeleteFailureReason::MarkedForReboot) => {
+                    result.reboot_pending_count += 1;
+                    result.needs_reboot = true;
+                }
+                Some(_) => {
+                    result.failed_count += 1;
+                    result.skipped_size += file_result.physical_size;
+                }
+            }
+
+            result.file_results.push(file_result);
+            processed_count += 1;
+            emit_progress(processed_count, &result);
+        }
+
+        result.generate_summary();
+
+        info!(
+            "增强删除完成: 成功 {}, 失败 {}, 待重启 {}, 释放 {} 字节",
+            result.success_count,
+            result.failed_count,
+            result.reboot_pending_count,
+            result.freed_physical_size
+        );
+
+        result
+    }
+
+    /// 删除单个文件
+    fn delete_single_file(&self, path: &str) -> FileDeleteResult {
+        let file_path = Path::new(path);
+
+        // 获取文件大小
+        let logical_size = self.get_file_size(file_path);
+        let physical_size = self.calculate_physical_size_for_path(file_path, logical_size);
+
+        // 检查文件是否存在
+        if !file_path.exists() {
+            return FileDeleteResult {
+                path: path.to_string(),
+                success: false,
+                logical_size,
+                physical_size,
+                failure_reason: Some(DeleteFailureReason::NotFound),
+                marked_for_reboot: false,
+            };
+        }
+
+        // 安全检查
+        if self.is_system_protected(file_path) {
+            return FileDeleteResult {
+                path: path.to_string(),
+                success: false,
+                logical_size,
+                physical_size,
+                failure_reason: Some(DeleteFailureReason::SystemProtected),
+                marked_for_reboot: false,
+            };
+        }
+
+        // 尝试删除
+        match self.try_delete(file_path) {
+            Ok(_) => {
+                debug!("成功删除: {}", path);
+                FileDeleteResult {
+                    path: path.to_string(),
+                    success: true,
+                    logical_size,
+                    physical_size,
+                    failure_reason: None,
+                    marked_for_reboot: false,
+                }
+            }
+            Err(e) => {
+                // 只把 Windows 共享冲突视为“占用”，避免权限错误被错误安排到重启队列。
+                let is_locked = matches!(e.raw_os_error, Some(32 | 33));
+
+                if is_locked && self.enable_reboot_delete {
+                    // 尝试标记为重启删除
+                    if self.is_safe_for_ownership(file_path) {
+                        match windows_api::mark_for_delete_on_reboot(path) {
+                            Ok(_) => {
+                                info!("文件已标记为重启删除: {}", path);
+                                return FileDeleteResult {
+                                    path: path.to_string(),
+                                    success: false,
+                                    logical_size,
+                                    physical_size,
+                                    failure_reason: Some(DeleteFailureReason::MarkedForReboot),
+                                    marked_for_reboot: true,
+                                };
+                            }
+                            Err(mark_err) => {
+                                warn!("标记重启删除失败: {} - {}", path, mark_err);
+                            }
+                        }
+                    }
+
+                    FileDeleteResult {
+                        path: path.to_string(),
+                        success: false,
+                        logical_size,
+                        physical_size,
+                        failure_reason: Some(DeleteFailureReason::FileLocked),
+                        marked_for_reboot: false,
+                    }
+                } else if e.raw_os_error == Some(5) || e.message.contains("权限") {
+                    FileDeleteResult {
+                        path: path.to_string(),
+                        success: false,
+                        logical_size,
+                        physical_size,
+                        // 保留 icacls 和属性处理的具体结果，避免界面只能显示笼统的权限不足。
+                        failure_reason: Some(DeleteFailureReason::Other(format!(
+                            "权限不足：{}",
+                            e.message
+                        ))),
+                        marked_for_reboot: false,
+                    }
+                } else {
+                    FileDeleteResult {
+                        path: path.to_string(),
+                        success: false,
+                        logical_size,
+                        physical_size,
+                        failure_reason: Some(DeleteFailureReason::Other(e.message)),
+                        marked_for_reboot: false,
+                    }
+                }
+            }
+        }
+    }
+
+    /// 尝试删除文件（多策略）
+    fn try_delete(&self, path: &Path) -> Result<(), DeleteAttemptError> {
+        // 保留第一次删除的原始错误码，后续策略失败时仍能准确判断是否为共享冲突。
+        let first_error = match self.direct_delete(path) {
+            Ok(()) => return Ok(()),
+            Err(error) => error,
+        };
+
+        let mut attempt_messages = vec![format!("直接删除失败: {}", first_error)];
+
+        // 策略2：移除保护属性后删除，并保留失败原因供界面定位问题。
+        if let Err(error) = self.delete_after_remove_attrs(path) {
+            attempt_messages.push(error);
+        } else {
+            return Ok(());
+        }
+
+        // Defender 清理向导明确标记的缓存目录允许默认执行单文件接管，其他目录仍受全局开关控制。
+        let path_string = path.to_string_lossy();
+        let is_cache_path = is_rebuildable_system_cache_path(&path_string);
+        if self.is_safe_for_ownership(path) && (self.enable_take_ownership || is_cache_path) {
+            if let Err(error) = self.delete_with_ownership(path) {
+                attempt_messages.push(error);
+            } else {
+                return Ok(());
+            }
+        }
+
+        // 所有策略都失败，汇总每一步结果，避免只显示笼统的“删除失败”。
+        Err(DeleteAttemptError {
+            message: format!("删除失败: {}", attempt_messages.join("；")),
+            raw_os_error: first_error.raw_os_error(),
+        })
+    }
+
+    /// 直接删除
+    fn direct_delete(&self, path: &Path) -> io::Result<()> {
+        if path.is_dir() {
+            fs::remove_dir_all(path)
+        } else {
+            fs::remove_file(path)
+        }
+    }
+
+    /// 移除保护属性后删除
+    fn delete_after_remove_attrs(&self, path: &Path) -> Result<(), String> {
+        let path_str = path.to_string_lossy();
+
+        // 移除只读等属性
+        windows_api::remove_protection_attributes(&path_str)?;
+
+        // 再次尝试删除
+        self.direct_delete(path)
+            .map_err(|e| format!("移除属性后仍无法删除: {}", e))
+    }
+
+    /// 获取所有权后删除
+    ///
+    /// # 中文说明
+    /// 使用 icacls 命令获取文件所有权，然后删除。
+    /// 注意：为了性能，不使用 /T 递归标志，只处理单个文件。
+    ///
+    /// 安全考虑：
+    /// - 只在 SAFE_OWNERSHIP_PATHS 列表中的目录执行
+    /// - 不会对系统关键文件执行此操作
+    fn delete_with_ownership(&self, path: &Path) -> Result<(), String> {
+        let path_str = path.to_string_lossy();
+
+        debug!("尝试获取所有权: {}", path_str);
+
+        // 使用 icacls 获取所有权（不使用 /T 递归，提升性能）
+        let output = Command::new("icacls")
+            .arg(&*path_str)
+            .arg("/setowner")
+            .arg(LOCAL_ADMINISTRATORS_SID)
+            .arg("/C") // 继续处理错误
+            .arg("/Q") // 静默模式
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW - 不显示命令行窗口
+            .output()
+            .map_err(|e| format!("执行 icacls 失败: {}", e))?;
+
+        if !output.status.success() {
+            return Err(format!(
+                "获取所有权失败（退出码 {:?}）",
+                output.status.code()
+            ));
+        }
+
+        // 授予完全控制权限
+        let output = Command::new("icacls")
+            .arg(&*path_str)
+            .arg("/grant")
+            .arg(format!("{}:F", LOCAL_ADMINISTRATORS_SID))
+            .arg("/C")
+            .arg("/Q")
+            .creation_flags(0x08000000)
+            .output()
+            .map_err(|e| format!("执行 icacls 授权失败: {}", e))?;
+
+        if !output.status.success() {
+            return Err(format!("授权失败（退出码 {:?}）", output.status.code()));
+        }
+
+        // 再次尝试删除
+        self.direct_delete(path)
+            .map_err(|e| format!("获取所有权后仍无法删除: {}", e))
+    }
+
+    /// 检查路径是否安全执行 Take Ownership
+    fn is_safe_for_ownership(&self, path: &Path) -> bool {
+        let path_string = path.to_string_lossy();
+        let normalized = path_string.replace('/', "\\").to_ascii_lowercase();
+
+        SAFE_OWNERSHIP_PATHS.iter().any(|safe_path| {
+            let Some(start) = normalized.find(safe_path) else {
+                return false;
+            };
+            let suffix = &normalized[start + safe_path.len()..];
+            // 目录白名单必须按路径段匹配，避免误放行名称相近的目录。
+            suffix.is_empty() || suffix.starts_with('\\')
+        })
+    }
+
+    /// 检查是否为系统保护文件（使用共享安全常量，与 delete_engine 保持一致）
+    fn is_system_protected(&self, path: &Path) -> bool {
+        use super::safety_constants::{
+            is_rebuildable_system_cache_path, PROTECTED_FILES, PROTECTED_PATH_PREFIXES,
+        };
+
+        let path_str = path.to_string_lossy().to_lowercase();
+
+        for prefix in PROTECTED_PATH_PREFIXES {
+            if path_str.starts_with(prefix) && !is_rebuildable_system_cache_path(&path_str) {
+                return true;
+            }
+        }
+
+        if let Some(file_name) = path.file_name() {
+            let name = file_name.to_string_lossy().to_lowercase();
+            for protected in PROTECTED_FILES {
+                if name == *protected {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    /// 获取文件大小
+    fn get_file_size(&self, path: &Path) -> u64 {
+        // 回收站条目的展示大小来自 $I 元数据，目录不能只统计 $R 的直属子项。
+        if let Some(logical_size) = get_recycle_metadata_size(path) {
+            return logical_size;
+        }
+
+        if path.is_file() {
+            fs::metadata(path).map(|m| m.len()).unwrap_or(0)
+        } else if path.is_dir() {
+            self.calculate_dir_size(path)
+        } else {
+            0
+        }
+    }
+
+    /// 计算目录大小（简化版，只返回估算值以提升性能）
+    fn calculate_dir_size(&self, path: &Path) -> u64 {
+        // 为了性能，只计算直接子项，不递归遍历
+        // 实际释放空间会在删除后由系统报告
+        fs::read_dir(path)
+            .map(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .filter_map(|e| e.metadata().ok())
+                    .map(|m| m.len())
+                    .sum()
+            })
+            .unwrap_or(0)
+    }
+}
+
+/// 读取回收站条目的原始逻辑大小，保证清理结果与扫描结果使用同一统计口径。
+fn get_recycle_metadata_size(path: &Path) -> Option<u64> {
+    let name = path.file_name()?.to_str()?;
+    if !name.starts_with("$R") || name.len() <= 2 {
+        return None;
+    }
+
+    let metadata_path = path.parent()?.join(format!("$I{}", &name[2..]));
+    let bytes = fs::read(metadata_path).ok()?;
+    if bytes.len() < 16 {
+        return None;
+    }
+
+    Some(u64::from_le_bytes(bytes[8..16].try_into().ok()?))
+}
+
+/// 按指定卷的簇大小换算实际占用空间，避免跨盘回收站统计使用错误的簇大小。
+fn align_physical_size(logical_size: u64, cluster_size: u32) -> u64 {
+    if logical_size == 0 || cluster_size == 0 {
+        return 0;
+    }
+
+    let cluster_size = cluster_size as u64;
+    ((logical_size + cluster_size - 1) / cluster_size) * cluster_size
+}
+
+/// 删除尝试错误，保留原始系统错误码用于区分占用和权限问题。
+#[derive(Debug)]
+struct DeleteAttemptError {
+    message: String,
+    raw_os_error: Option<i32>,
+}
+
+/// 从回收站数据路径提取 Shell API 所需的驱动器根路径。
+fn recycle_drive_root(path: &str) -> Option<String> {
+    let bytes = path.as_bytes();
+    if bytes.len() < 2 || bytes[1] != b':' || !bytes[0].is_ascii_alphabetic() {
+        return None;
+    }
+
+    Some(format!("{}:\\", (bytes[0] as char).to_ascii_uppercase()))
+}
+
+/// 从普通文件路径提取分区根目录，用于按卷读取簇大小。
+fn drive_root(path: &Path) -> Option<String> {
+    let path = path.to_string_lossy();
+    let bytes = path.as_bytes();
+    if bytes.len() < 2 || bytes[1] != b':' || !bytes[0].is_ascii_alphabetic() {
+        return None;
+    }
+    Some(format!("{}:\\", (bytes[0] as char).to_ascii_uppercase()))
+}
+
+impl Default for EnhancedDeleteEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ============================================================================
+// 测试
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_physical_size_calculation() {
+        let engine = EnhancedDeleteEngine::new();
+
+        // 假设簇大小为 4096
+        assert_eq!(engine.calculate_physical_size(1), 4096);
+        assert_eq!(engine.calculate_physical_size(4096), 4096);
+        assert_eq!(engine.calculate_physical_size(4097), 8192);
+        assert_eq!(engine.calculate_physical_size(0), 0);
+    }
+
+    #[test]
+    fn test_safe_ownership_check() {
+        let engine = EnhancedDeleteEngine::new();
+
+        assert!(engine.is_safe_for_ownership(Path::new("C:\\Windows\\Temp\\test.tmp")));
+        assert!(engine
+            .is_safe_for_ownership(Path::new("C:\\Users\\Test\\AppData\\Local\\Temp\\file.log")));
+        assert!(engine.is_safe_for_ownership(Path::new(
+            "C:\\ProgramData\\Microsoft\\Windows Defender\\Support\\MPLog.log"
+        )));
+        assert!(!engine.is_safe_for_ownership(Path::new(
+            "C:\\ProgramData\\Microsoft\\Windows Defender\\Support2\\MPLog.log"
+        )));
+        assert!(!engine.is_safe_for_ownership(Path::new("C:\\Windows\\System32\\test.dll")));
+        // 深度扫描扩展的缓存目录（Defender 扫描历史、字体缓存、剪贴板、NVIDIA shader 变体）
+        // 也应允许安全提权删除。
+        assert!(engine.is_safe_for_ownership(Path::new(
+            "C:\\ProgramData\\Microsoft\\Windows Defender\\Scans\\History\\Service\\entry.bin"
+        )));
+        assert!(engine.is_safe_for_ownership(Path::new(
+            "C:\\Windows\\ServiceProfiles\\LocalService\\AppData\\Local\\FontCache\\font.bin"
+        )));
+        assert!(engine.is_safe_for_ownership(Path::new(
+            "C:\\Users\\Test\\AppData\\Local\\Microsoft\\Windows\\Clipboard\\entry.bin"
+        )));
+        assert!(engine.is_safe_for_ownership(Path::new(
+            "C:\\Users\\Test\\AppData\\Local\\NVIDIA\\GLCache\\shader.bin"
+        )));
+    }
+
+    #[test]
+    fn test_system_protected_check() {
+        let engine = EnhancedDeleteEngine::new();
+
+        assert!(engine.is_system_protected(Path::new("C:\\Windows\\System32\\ntdll.dll")));
+        assert!(engine.is_system_protected(Path::new("C:\\pagefile.sys")));
+        assert!(!engine.is_system_protected(Path::new("C:\\Temp\\test.tmp")));
+    }
+
+    #[test]
+    fn test_extended_junk_paths_are_deletable() {
+        let engine = EnhancedDeleteEngine::new();
+
+        // 新纳入深度扫描的缓存/诊断目录必须既不被系统保护拦截，也允许提权删除，
+        // 否则它们会被扫出来却永远删不掉。
+        let deletable_paths = [
+            r"C:\Windows\SystemTemp\setup.tmp",
+            r"C:\Windows\LiveKernelReports\WATCHDOG\report.dmp",
+            r"C:\Users\Test\AppData\Local\Microsoft\Windows\Explorer\iconcache.db",
+            r"C:\Users\Test\AppData\Local\Google\Chrome\User Data\Default\Service Worker\CacheStorage\abc",
+            r"C:\Users\Test\AppData\Local\NVIDIA\ComputeCache\shader.bin",
+            r"C:\ProgramData\Microsoft\Windows\WER\ReportQueue\AppCrash\report.wer",
+        ];
+
+        for path in deletable_paths {
+            assert!(
+                !engine.is_system_protected(Path::new(path)),
+                "不应被系统保护拦截: {}",
+                path
+            );
+            assert!(
+                engine.is_safe_for_ownership(Path::new(path)),
+                "应允许提权删除: {}",
+                path
+            );
+        }
+    }
+
+    #[test]
+    fn test_recycle_drive_root() {
+        // Shell API 按盘符清空，非法路径必须被拒绝而不能默认落到 C 盘。
+        assert_eq!(
+            recycle_drive_root(r"d:\$Recycle.Bin\item"),
+            Some("D:\\".to_string())
+        );
+        assert_eq!(recycle_drive_root(r"not-a-windows-path"), None);
+    }
+}

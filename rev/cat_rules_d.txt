@@ -1,0 +1,151 @@
+YbOѻ⦿r(4McBlocked
+customProtocolIprivate::RawValue$serde_json::priErrorMapAccess::next_value called before next_keyC:\Users\l3268\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\de.rs
+map with a single key
+string or map
+internal error: entered unreachable codeC:\Users\l3268\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_json-1.0.151\src\de.rs
+}falsetrue
+newtype variant
+PhysicalLogical
+rgbawidthheightstruct LogicalSizelabelstruct variant EventTarget::Webview with 1 element~6~@
+struct variant EventTarget::AnyLabel with 1 element
+struct variant EventTarget::WebviewWindow with 1 element
+struct variant EventTarget::Window with 1 element
+struct PhysicalSizestruct LogicalPositionstruct PhysicalPositionAnyAnyLabelAppWindowWebviewWebviewWindow7~@
+redgreenbluealphanamepathsizeisDirhasChildrencategoryfriendlyNamedescriptionsafetychildrenstruct TreeNode with 10 elements
+versionshortVersionauthorscommentscopyrightlicensewebsitewebsiteLabelcreditsiconstruct AboutMetadata with 11 elements
+MenuMenuItemPredefinedSubmenuCheckIcon
+variant index 0 <= i < 6
+idtextenableditemsstruct SubmenuPayload with 5 elements
+scannedAtroottreestruct ScanCache with 3 elements
+handleracceleratorstruct MenuItemPayload with 5 elements:~@
+checkeditemSeparatorCopyCutPasteSelectAllUndoRedoMinimizeMaximizeFullscreenHideHideOthersShowAllCloseWindowQuitAboutServicesBringAllToFront
+variant index 0 <= i < 18
+totalFreedtotalRunslastAtstruct IconMenuItemPayload with 6 elements
+struct CheckMenuItemPayload with 6 elements
+struct PreventOverflowMargin with 2 elements
+struct PredefinedMenuItemPayload with 2 elements=~@
+urlappcmdcallbackerrorpayloadoptions__TAURI_INVOKE_KEY__struct Message with 6 elements
+headerscustomProtocolIpcBlockedSizePositionPixelUnitxyassertion failed: validate_scale_factor(scale_factor)C:\Users\l3268\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\dpi-0.1.2\src\lib.rs
+a Display implementation returned an error unexpectedly/rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library\alloc\src\string.rs
+called `Result::unwrap()` on an `Err` value
+NotAChildOfThisMenuNotInitializedAlreadyInitialized
+AcceleratorParseError
+valid pluginC:\Users\l3268\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-2.11.5\src\plugin.rs
+command 7 has an argument with no name with a non-optional value
+command
+missing required key
+command
+expected a value for key & but the IPC call used a bytes payload
+C:\Users\l3268\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-2.11.5\src\menu\plugin.rs
+data did not match any variant of untagged enum IconItemKinddata did not match any variant of untagged enum MenuItemPayloadKind
+unexpected menu item kind
+menu
+\;// Copyright 2019-2024 Tauri Programme within The Commons Conservancy
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
+
+Object.defineProperty(window.__TAURI_INTERNALS__.plugins, 'path', {
+  value: {
+    sep: __TEMPLATE_sep__,
+    delimiter: __TEMPLATE_delimiter__
+  }
+})
+C:\Users\l3268\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-2.11.5\src\path\plugin.rs
+EventTargetkindinternally tagged enum EventTargeteventeventId
+(event, eventId) =>
+// Copyright 2019-2024 Tauri Programme within The Commons Conservancy
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
+
+// eslint-disable-next-line
+Object.defineProperty(window, '__TAURI_EVENT_PLUGIN_INTERNALS__', {
+  value: {
+    unregisterListener: __RAW_unregister_listener_function__
+  }
+})
+C:\Users\l3268\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-2.11.5\src\event\plugin.rs
+imagewindow_labelwebviewresources
+ReservedNamemoveprogressnotallowedcontextmenucellverticaltextaliascopynodropgrabgrabbingallscrollzoominzoomoutneresizesresizeseresizewresizeewresizeneswresizecolresizeinternal error: entered unreachable code: invalid Once state/rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library\std\src\sys\sync\once\futex.rs
+C:\Users\l3268\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_json-1.0.151\src\ser.rs
+'&&~,c-c-
+-c-c-c-c-c-c-c-(-,,,-8.8.-8.8.8.8.8.8.8.--------------
+//u/3000z000000000Q0e0[0X0000~00@00p0z0f00011
+11111111B10	100@1,161"10,1
+1s1020210202020202020211111111111111116222e22222222s2<2P2F2222222222222222233F33333333j3
+3P3<3F323Z33j4j4
+4j4j4j4j4j4j4j4#43334p5p54p5p5p5p5p5p5p5
+54445:6:65:6:6:6:6:6:6:6555555555555/6(7(7v6(7(7(7(7(7(7(76M6a6W6X6666~6666666,66f6p6R666z66\6667o77679
+:BEEEEEEEEEEEFEEEEEEEEEEEEE3FEEEEEEBE^JJJJJJJJJJJKJJJJJJJJJJJJJOKJJJJJJ^J9999999999Z9999999r99999999999	ΕO
+gahahahahahahahahahahhahahahahahahah1iahahahahahiahahahahahah2jqssssssssss@ssssssssssssss\tssssssti
+糡.O!u7pOOO䴡ҳ
+䶡ʷuy#͸=ѹzAEzyzzz	J
+AA깡]깡y鸡깡깡깡y
+ZZ͸ZZYZZZ鸡a********Jtbn\hVzP
+:8=7gN?Q?QfQNQ2kkkVpl>n>n[nKnnrWsrrsXv
+-Ȋ9adds-籢财
+888888888888888
+\YZBXB]WJa
+``j_`lOnmm&mnjlpoNp
+oDx3zmyy
+yzNx|{2|z(
+ʔ*蒣P?yܝ
+Zޠ>6諣ެ@RL%>Y
+Q.Tttyv
+fv66lЎ0sR,?ᱤtR@ƤƤǤǤǤ
+6666
+proiPkpjxɟp_z
+X@/rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library\core\src\str\pattern.rs
+Error
+/rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library\alloc\src\collections\btree\navigate.rs
+missing field `
+unknown field `
+`, there are no fields
+unknown field `
+`, expected
+invalid length
+, expected
+duplicate field `
+unknown variant `
+`, there are no variants
+unknown variant `
+`, expected
+C:\Users\l3268\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_json-1.0.151\src\ser.rs
+}falsetrue
+\??\src\mft_scan.rs
+src\collector.rs
+SOFTWARE\Microsoft\Windows NT\CurrentVersionProductNameDisplayVersionCurrentMajorVersionNumberCurrentMinorVersionNumberCurrentBuildNumberWindows 10Windows 11
+Microsoft
+:̿,LB)隇AUSERPROFILEDesktop; PERSONAL-DO-NOT-ADDupdaterUPDATER-RESIDUEVERSION-SIBLINGS
+::__others__cachecode cachegpucachecacheddatacachestorageshadercachedawncachecrashpadblob_storageservice workerlogslogtemptmpcrashdumpsdumpspendingstagingq~@
+SOFTWARE\Microsoft\Windows\CurrentVersion\UninstallSOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\UninstallDisplayNameEstimatedSizeapp-mdPathjsonPathsoftwareCountdirRowsdriveRowselapsedSecs%USERPROFILE%%USER%USERNAMELOCALAPPDATAAPPDATAProgramDatanpm-cachenpmnpm2pipYarnCacheyarnpnpmstore.nugetpackagesnuget.gradlecachesgradle.m2repositorymaven.cargoregistrycargogopkgmodminiconda3pkgscondaanaconda3conda2
+diskbutler-rule-report-
+diskbutler-rule-report-
+.json
+%LOCALAPPDATA%%APPDATA%%ProgramData%# DiskButler Rule Collection Report> Privacy: no file names, no file contents, no user name. Review before sharing.## Machine Summary- Generated:
+## Installed Software (
+%LOCALAPPDATA% Top-Level Directories (>=10MB)%APPDATA% Top-Level Directories (>=10MB)%ProgramData% Top-Level Directories (>=50MB)## Package Manager Caches| Manager | Path | Size (MB) |## Drive Top Directories (whole-disk, >=1GB) - knowledge-base clues| Path | Size (GB) |
+_Scan took 
+ minutes._
+&nbsp;
+| Directory | Size (MB) | Cache-like children | Flags ||---|---|---|---|
+total 
+ GB, free
+写入 MD 报告失败：
+写入 JSON 报告失败：
+start argument
+C:\Users\l3268\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\itoa-1.0.18\src\lib.rs
+internal error: entered unreachable code
+a Display implementation returned an error unexpectedly/rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library\alloc\src\string.rs
+called `Result::unwrap()` on an `Err` value
+/rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library\alloc\src\collections\btree\map\entry.rs
+assertion failed: idx < CAPACITY/rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library\alloc\src\collections\btree\node.rs
+assertion failed: edge.height == self.height - 1P|~@
+internal error: entered unreachable code: empty internal node
+assertion failed: self.height > 0
+assertion failed: src.len() == dst.len()P|~@
+assertion failed: edge.height == self.node.height - 1
+assertion failed: count > 0
+assertion failed: old_right_len + count <= CAPACITY
+assertion failed: old_left_len >= count
+assertion failed: old_left_len + count <= CAPACITY
+assertion failed: old_right_len

@@ -1,0 +1,73 @@
+[package]
+name = "disk-butler"
+version = "0.7.8"
+description = "C盘管家 - 磁盘与内存维护助手"
+authors = ["you"]
+edition = "2021"
+# 包内有主程序与扫描服务两个 bin，明确主二进制（tauri CLI 依此识别应用本体）
+default-run = "disk-butler"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "disk_butler_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+jwalk = "0.8"
+sysinfo = "0.32"
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_UI_Shell",
+    "Win32_System_Com",
+    "Win32_System_SystemInformation",
+    "Win32_System_Pipes",
+    "Win32_System_IO",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Graphics_Gdi",
+] }
+winreg = "0.52"
+encoding_rs = "0.8"
+# MFT 直读扫描（WizTree 同款原理）与后台服务
+ntfs-reader = "0.4"
+windows-service = "0.8"
+rayon = "1"
+# 软件体检：图标提取后编码为 PNG（仅启用 png 编码器，控制体积）
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[profile.dev]
+# 加快扫描相关依赖的运行速度；关闭调试信息以降低编译内存峰值（16GB 内存机器必需）
+opt-level = 1
+debug = false
+
+[profile.dev.package."*"]
+debug = false
+
+# windows 系 API 绑定 crate 体积巨大，O3 优化时 LLVM 内存峰值超 5GB 会在 16GB 机器上 OOM；
+# 它们只是薄壳绑定，降到 O1 对运行性能无影响
+[profile.release.package.windows]
+opt-level = 1
+
+[profile.release.package.windows-sys]
+opt-level = 1
+
+[profile.release.package.webview2-com-sys]
+opt-level = 1
+
+# 本应用自身：I/O 密集型，热点在依赖库（jwalk 等保持 O3），O1 降编译内存峰值
+[profile.release.package.disk-butler]
+opt-level = 1
+
