@@ -56,32 +56,39 @@ pub fn load_scan_cache(root: String) -> Option<serde_json::Value> {
     None
 }
 
-// ============ M3 一键清理 ============
+// ============ M3 一键清理（P4 真实实现） ============
 
+/// 清理项扫描（返回当前可清理的项 + 大小）
 #[tauri::command]
-pub fn list_cleanup_items() -> Result<serde_json::Value, String> {
-    Ok(serde_json::json!({ "items": [], "phase": "P1 骨架" }))
+pub fn list_cleanup_items() -> Result<crate::cleaner::CleanupScan, String> {
+    Ok(crate::cleaner::items::list_items())
 }
 
+/// 执行清理（id 驱动 + 当场重扫 + R1 四层护栏）
 #[tauri::command]
-pub fn run_cleanup(ids: Vec<String>) -> Result<serde_json::Value, String> {
-    Err(format!("P1 骨架：run_cleanup({} 个 id) 待 P4 接入统一删除引擎", ids.len()))
+pub fn run_cleanup(app: tauri::AppHandle, ids: Vec<String>) -> Result<crate::cleaner::CleanupReport, String> {
+    let report = crate::cleaner::items::run(&ids);
+    // 记账：用实际磁盘变化
+    crate::cleaner::stats::record(&app, report.free_after.saturating_sub(report.free_before));
+    Ok(report)
 }
 
+/// 累计清理统计
 #[tauri::command]
-pub fn get_cleanup_stats() -> serde_json::Value {
-    serde_json::json!({ "totalFreed": 0, "totalRuns": 0, "lastAt": 0 })
+pub fn get_cleanup_stats(app: tauri::AppHandle) -> crate::cleaner::stats::CleanupStats {
+    crate::cleaner::stats::load(&app)
 }
 
+/// 孤儿目录扫描（含 C1 互斥：reparse 前置过滤）
 #[tauri::command]
-pub fn scan_orphan_dirs() -> Result<serde_json::Value, String> {
-    Ok(serde_json::json!({ "confirmed": [], "phase": "P1 骨架" }))
+pub fn scan_orphan_dirs() -> Result<crate::cleaner::OrphanScan, String> {
+    Ok(crate::cleaner::orphans::scan_orphans())
 }
 
+/// 孤儿目录清理（当场重扫白名单 + canonicalize 校验）
 #[tauri::command]
-pub fn clean_orphan_dirs(paths: Vec<String>) -> Result<serde_json::Value, String> {
-    // 安全（R1）：id/路径白名单重扫在 P4 实现；P1 拒绝一切
-    Err(format!("P1 骨架：clean_orphan_dirs 拒绝执行（{} 条路径）——待 P4 统一删除引擎就位", paths.len()))
+pub fn clean_orphan_dirs(paths: Vec<String>) -> Result<crate::cleaner::ResidueReport, String> {
+    Ok(crate::cleaner::orphans::clean_orphans(&paths))
 }
 
 // ============ M4 空间腾挪 ============

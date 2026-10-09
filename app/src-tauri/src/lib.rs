@@ -1,3 +1,4 @@
+mod cleaner;
 mod commands;
 mod relocate_commands;
 mod relocate;
