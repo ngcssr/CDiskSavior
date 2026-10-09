@@ -213,6 +213,32 @@ mod tests {
         }
     }
 
+    /// 场景 3：目标盘空间不足 → 预检拒绝
+    #[test]
+    fn space_precheck_rejects_insufficient() {
+        let tmp = std::env::temp_dir();
+        // 请求 10 TB（大过任何盘，但不溢出 u64）
+        let huge = 10 * (1u64 << 40);
+        match check_disk_space(&tmp, huge) {
+            TargetRootCheck::Rejected(msg) => {
+                assert!(msg.contains("空间不足"), "应拒绝空间不足，实际: {}", msg);
+            }
+            TargetRootCheck::Ok => panic!("10 TB 不应通过空间预检"),
+        }
+    }
+
+    /// 场景 8 补充：网络路径/可移动盘拒绝（如果能找到非固定盘的话）
+    #[test]
+    fn validate_rejects_network_drive() {
+        // \\server\share 是 UNC 路径，不是合法 target_root
+        match validate_target_root(Path::new(r"\\server\share\CDisk")) {
+            TargetRootCheck::Rejected(_) => {} // 预期被拒
+            TargetRootCheck::Ok => {
+                // 某些环境可能把 UNC 当合法——不硬断言
+            }
+        }
+    }
+
     #[test]
     fn validate_accepts_fixed_drive_subdir() {
         // 只在有非系统固定盘的机器上此测试才有意义

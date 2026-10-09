@@ -167,4 +167,19 @@ mod tests {
         assert_eq!(v["ok"], true);
         let _ = fs::remove_dir_all(&dir);
     }
+
+    /// 场景 9：双实例互斥——第一个成功、第二个被拒
+    #[test]
+    fn double_instance_rejected() {
+        let first = SingleInstance::new();
+        assert!(first.is_ok(), "第一次获取互斥应成功");
+
+        // 第二次获取同一互斥 → 应被拒（已有实例）
+        match SingleInstance::new() {
+            Err(false) => {} // 预期：ERROR_ALREADY_EXISTS
+            Err(true) => {} // 也可接受：创建失败按已有处理
+            Ok(_) => panic!("第二次实例应被互斥拒绝"),
+        }
+        // first 在此 drop，释放互斥
+    }
 }
