@@ -76,15 +76,16 @@ export const api_relocate = {
   scan_relocate_targets: () => invoke<RelocateTarget[]>("scan_relocate_targets"),
   list_locking_processes: (p: string) => invoke<LockingProcess[]>("list_locking_processes", { path: p }),
   kill_locking_process: (pid: number) => invoke<void>("kill_locking_process", { pid }),
-  start_migration: (req: MigrationRequest) => invoke<MigrationRecord>("start_migration", { request: req }),
+  start_migration: (sources: string[], targetRoot: string, killPids: number[]) =>
+    invoke<{ freed: number; records: MigrationRecord[] }>("start_migration", { sources, targetRoot, killPids }),
   pause_migration: () => invoke<void>("pause_migration"),
   resume_migration: () => invoke<void>("resume_migration"),
   cancel_migration: () => invoke<void>("cancel_migration"),
-  restore_migration: (recordId: string) => invoke<void>("restore_migration", { record_id: recordId }),
+  restore_migration: (recordId: string) => invoke<void>("restore_migration", { recordId }),
   list_migration_history: () => invoke<MigrationRecord[]>("list_migration_history"),
-  remove_migration_record: (recordId: string) => invoke<void>("remove_migration_record", { record_id: recordId }),
+  remove_migration_record: (recordId: string) => invoke<void>("remove_migration_record", { recordId }),
   get_relocate_config: () => invoke<RelocateConfig>("get_relocate_config"),
-  save_relocate_config: (cfg: RelocateConfig) => invoke<void>("save_relocate_config", { config: cfg }),
+  save_relocate_config: (cfg: RelocateConfig) => invoke<void>("save_relocate_config", { configValue: cfg }),
 };
 
 // ============ M5 系统瘦身（28） ============
@@ -207,16 +208,16 @@ export type LeftoverReport = unknown;
 export type LeftoverSafety = unknown;
 export type DeleteResult = unknown;
 export type CleanupAction = unknown;
-export type RelocateTarget = { label: string; source: string; target_subdir: string; size: number; path: string };
+export type RelocateTarget = { label: string; source: string; targetSubdir: string; size: number; path: string; isJunction: boolean };
 export type LockingProcess = { pid: number; name: string; path?: string };
-export type MigrationRequest = { sources: string[]; target_root: string; auto_kill: boolean };
 export type MigrationRecord = {
-  id: string; name: string; source_path: string; target_path: string;
-  size_bytes: number; timestamp: number; batch_id?: string; batch_timestamp?: number;
+  id: string; name: string; sourcePath: string; targetPath: string;
+  sizeBytes: number; timestamp: number; batchId?: string; batchTimestamp?: number;
 };
 export type RelocateConfig = {
-  version: number; target_root: string;
-  scan_sources: { enabled: boolean; label: string; path: string; target_subdir: string }[];
+  version: number; targetRoot: string | null;
+  scanSources: { enabled: boolean; label: string; path: string; targetSubdir: string }[];
+  legacyImported: boolean;
 };
 export type SlimStatus = unknown;
 export type DismResult = unknown;
