@@ -1,13 +1,11 @@
-// CDisk Savior · P1 骨架命令层
+// CDisk Savior · 命令层
 //
-// 设计文档 §4：三方共 119 条命令 → 116 个统一命令。
-// P1 阶段注册 disk-butler 公开集的 23 条（设计文档核验值），
-// 其余（light-c 84 + WindowsClear 移植 12）在 P2+ 按模块接入。
-// 全部为占位实现：返回结构化的"未实现"错误或最小可用数据。
+// 设计文档 §4：116 个统一命令。P1 骨架 + P2 M4 + P3 M1/M2 真实实现。
+// 其余模块在 P4+ 按模块接入。
 
 use serde::Serialize;
 
-/// 统一的"P1 骨架占位"错误类型
+/// 统一的占位错误类型
 #[derive(Debug, Serialize)]
 pub struct NotReady {
     pub cmd: &'static str,
@@ -15,66 +13,41 @@ pub struct NotReady {
 }
 
 pub fn not_ready(cmd: &'static str) -> NotReady {
-    NotReady { cmd, phase: "P1 骨架：待接入真实实现" }
+    NotReady { cmd, phase: "待接入真实实现" }
 }
 
-// ============ 通用类型（P1 最小集） ============
+// ============ M1 总览（P3 真实实现） ============
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DriveInfo {
-    pub mount: String,
-    pub label: String,
-    pub total: u64,
-    pub free: u64,
-    pub fs: String,
-    pub kind: String,
-}
-
-// ============ M1 总览 ============
-
-/// 驱动器列表（P1 真实实现：GetLogicalDrives + GetDiskFreeSpaceExW）
+/// 驱动器列表（真实 Windows API：GetLogicalDriveStringsW + GetDiskFreeSpaceExW）
 #[tauri::command]
-pub fn get_drives() -> Result<Vec<DriveInfo>, String> {
-    let mut drives = Vec::new();
-    // P1：先返回 C:\ 的静态占位，P2 接 windows-sys 真实枚举
-    drives.push(DriveInfo {
-        mount: "C:\\".into(),
-        label: "系统盘".into(),
-        total: 0,
-        free: 0,
-        fs: "NTFS".into(),
-        kind: "fixed".into(),
-    });
-    Ok(drives)
+pub fn get_drives() -> Result<Vec<crate::scan::DriveInfo>, String> {
+    Ok(crate::scan::get_drives())
 }
 
+/// 内存报告（GlobalMemoryStatusEx）
 #[tauri::command]
 pub fn memory_report() -> Result<serde_json::Value, String> {
-    Ok(serde_json::json!({
-        "overview": { "total": 0, "used": 0, "swapTotal": 0 },
-        "processes": [],
-        "phase": "P1"
-    }))
+    Ok(crate::scan::memory_report())
 }
 
+/// 页面文件检查
 #[tauri::command]
 pub fn pagefile_check() -> Result<serde_json::Value, String> {
-    Ok(serde_json::json!({ "consistent": true, "details": [], "phase": "P1" }))
+    Ok(crate::scan::pagefile_check())
 }
 
-// ============ M2 磁盘透视 ============
+// ============ M2 磁盘透视（P3 真实实现） ============
 
+/// 扫描驱动器（jwalk 并行目录树 → TreeNode）
 #[tauri::command]
-pub fn scan_drive(root: String) -> Result<serde_json::Value, String> {
-    let _ = root;
-    Err("P1 骨架：scan_drive 待 P3 接入 MFT/TreeMap 引擎".into())
+pub fn scan_drive(root: String) -> Result<crate::scan::TreeNode, String> {
+    crate::scan::scan_directory(&root)
 }
 
+/// 扫描指定目录
 #[tauri::command]
-pub fn scan_dir(path: String) -> Result<serde_json::Value, String> {
-    let _ = path;
-    Err("P1 骨架：scan_dir 待 P3 接入".into())
+pub fn scan_dir(path: String) -> Result<crate::scan::TreeNode, String> {
+    crate::scan::scan_directory(&path)
 }
 
 #[tauri::command]

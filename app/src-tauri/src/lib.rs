@@ -1,6 +1,7 @@
 mod commands;
 mod relocate_commands;
 mod relocate;
+mod scan;
 mod state;
 
 // P1 骨架 + P2 M4 空间腾挪命令
