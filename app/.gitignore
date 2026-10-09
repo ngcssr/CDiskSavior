@@ -1,0 +1,16 @@
+# 依赖与产物
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+
+# 日志
+*.log
+npm_install.log
+build.log
+
+# 图标源（保留生成的 icons/）
+app-icon.png
+
+# 本地环境
+.env*

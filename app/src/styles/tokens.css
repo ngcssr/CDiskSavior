@@ -1,0 +1,58 @@
+/* CDisk Savior 设计令牌（沿用 disk-butler 的 tokens.css 体系） */
+
+:root {
+  --color-bg: #f7f8fa;
+  --color-surface: #ffffff;
+  --color-surface-hover: #f0f1f4;
+  --color-line: #e5e7eb;
+  --color-text: #1a1d23;
+  --color-text-secondary: #6b7280;
+
+  --color-primary: #3b82f6;
+  --color-primary-soft: #eff6ff;
+
+  --color-safe: #16a34a;
+  --color-caution: #d97706;
+  --color-danger: #dc2626;
+  --color-danger-bg-soft: #fef2f2;
+  --color-danger-text: #b91c1c;
+
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="dark"] {
+  --color-bg: #131519;
+  --color-surface: #1b1e24;
+  --color-surface-hover: #23262e;
+  --color-line: #2c3038;
+  --color-text: #e7e9ec;
+  --color-text-secondary: #9ca3af;
+
+  --color-primary: #60a5fa;
+  --color-primary-soft: rgba(96, 165, 250, 0.12);
+
+  --color-safe: #4ade80;
+  --color-caution: #fbbf24;
+  --color-danger: #f87171;
+  --color-danger-bg-soft: rgba(248, 113, 113, 0.1);
+  --color-danger-text: #fca5a5;
+
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    "Microsoft YaHei",
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}

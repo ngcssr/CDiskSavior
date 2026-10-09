@@ -1,0 +1,9 @@
+# CDisk Savior 构建配置
+#
+# 修复：tauri-utils → schemars/preserve_order → indexmap 1.9 的 build.rs 用 autocfg 探测 std，
+# 本机 MSVC 装在非标准路径（C:\BuildTools）导致探测失败 → has_std 未设置 → E0107。
+# 显式声明 has_std cfg 跳过探测（等价于 indexmap 的 std feature 生效时的行为）。
+# 若未来升级 indexmap 2.x 或 tauri 修复此依赖链，可移除此配置。
+
+[build]
+rustflags = ["--cfg", "has_std"]

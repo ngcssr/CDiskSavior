@@ -1,0 +1,32 @@
+[package]
+name = "cdisk-savior"
+version = "0.1.0"
+description = "CDisk Savior - 磁盘与内存维护助手"
+authors = ["you"]
+edition = "2021"
+default-run = "cdisk-savior"
+
+[lib]
+name = "cdisk_savior_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 修复：tauri-utils → schemars/preserve_order → indexmap 1.9 的 build.rs 用 autocfg 探测 std，
+# MSVC 装在非标准路径时探测失败 → has_std 未设置 → no_std 分支（IndexMap 泛型无默认值）→ E0107。
+# 显式启用 std feature 跳过探测（CARGO_FEATURE_STD 直接 emit has_std）。
+indexmap = { version = "1", features = ["std"] }
+
+# P1 骨架最小集；P2+ 按设计文档 §5.1 逐步引入
+# jwalk = "0.8"
+# windows-sys = ...
+
+[profile.release]
+opt-level = 1

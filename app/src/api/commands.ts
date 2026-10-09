@@ -1,0 +1,244 @@
+/**
+ * CDisk Savior · 统一命令接口层
+ *
+ * 设计文档 §4 的 116 个统一命令按模块分组。
+ * P1 骨架阶段：后端已注册 23 条（disk-butler 公开集），
+ * 其余命令调用会得到后端的"P1 骨架占位"错误——前端据此渲染占位状态。
+ */
+import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import type { ModuleId } from "../store";
+
+/** 统一 invoke：透传 Tauri IPC */
+async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  return tauriInvoke<T>(cmd, args);
+}
+
+// ============ M1 总览（8） ============
+export const api_dashboard = {
+  get_drives: () => invoke<DriveInfo[]>("get_drives"),
+  get_disk_info: () => invoke<DiskInfo>("get_disk_info"),
+  get_disk_health: () => invoke<DiskHealth>("get_disk_health"),
+  get_health_score: () => invoke<HealthScore>("get_health_score"),
+  get_system_info: () => invoke<SystemInfo>("get_system_info"),
+  memory_report: () => invoke<MemoryReport>("memory_report"),
+  pagefile_check: () => invoke<PagefileCheck>("pagefile_check"),
+};
+
+// ============ M2 磁盘透视（14） ============
+export const api_insight = {
+  scan_drive: (root: string) => invoke<TreeNode>("scan_drive", { root }),
+  scan_dir: (path: string) => invoke<TreeNode>("scan_dir", { path }),
+  load_scan_cache: (root: string) => invoke<ScanCache | null>("load_scan_cache", { root }),
+  scan_disk_growth: () => invoke<GrowthReport>("scan_disk_growth"),
+  cancel_disk_growth_scan: () => invoke<void>("cancel_disk_growth_scan"),
+  get_disk_growth_directory_details: (p: string) => invoke<GrowthDirDetails>("get_disk_growth_directory_details", { path: p }),
+  get_disk_growth_file_details: (p: string) => invoke<GrowthFileDetails>("get_disk_growth_file_details", { path: p }),
+  get_disk_growth_export_tree: () => invoke<GrowthTree>("get_disk_growth_export_tree"),
+  save_disk_growth_html: (content: string, name: string) => invoke<string | null>("save_disk_growth_html", { content, default_file_name: name, dialog_title: "导出增长报告" }),
+  scan_hotspot: () => invoke<HotspotReport>("scan_hotspot"),
+  cancel_hotspot_scan: () => invoke<void>("cancel_hotspot_scan"),
+  scan_large_files: () => invoke<LargeFileReport>("scan_large_files"),
+  cancel_large_file_scan: () => invoke<void>("cancel_large_file_scan"),
+  scan_path_direct: (p: string) => invoke<TreeNode>("scan_path_direct", { path: p }),
+};
+
+// ============ M3 一键清理（27） ============
+export const api_clean = {
+  list_cleanup_items: () => invoke<CleanupScan>("list_cleanup_items"),
+  run_cleanup: (ids: string[]) => invoke<CleanupReport>("run_cleanup", { ids }),
+  get_cleanup_stats: () => invoke<CleanupStats>("get_cleanup_stats"),
+  scan_orphan_dirs: () => invoke<OrphanScan>("scan_orphan_dirs"),
+  clean_orphan_dirs: (paths: string[]) => invoke<ResidueReport>("clean_orphan_dirs", { paths }),
+  scan_junk_files: () => invoke<JunkReport>("scan_junk_files"),
+  scan_deep_junk_files: () => invoke<DeepJunkReport>("scan_deep_junk_files"),
+  cancel_deep_junk_scan: () => invoke<void>("cancel_deep_junk_scan"),
+  get_deep_junk_category_page: (cat: string, page: number) => invoke<DeepJunkPage>("get_deep_junk_category_page", { category: cat, page }),
+  scan_category: (cat: string) => invoke<CategoryReport>("scan_category", { category: cat }),
+  get_categories: () => invoke<Category[]>("get_categories"),
+  scan_social_cache: () => invoke<SocialCacheReport>("scan_social_cache"),
+  scan_uninstall_leftovers: () => invoke<LeftoverReport>("scan_uninstall_leftovers"),
+  check_leftover_safety: (p: string) => invoke<LeftoverSafety>("check_leftover_safety", { path: p }),
+  list_leftover_whitelist: () => invoke<string[]>("list_leftover_whitelist"),
+  add_leftover_whitelist_entry: (e: string) => invoke<void>("add_leftover_whitelist_entry", { entry: e }),
+  remove_leftover_whitelist_entry: (e: string) => invoke<void>("remove_leftover_whitelist_entry", { entry: e }),
+  delete_files: (paths: string[]) => invoke<DeleteResult>("delete_files", { paths }),
+  enhanced_delete_files: (paths: string[]) => invoke<DeleteResult>("enhanced_delete_files", { paths }),
+  delete_deep_junk_files: (paths: string[]) => invoke<DeleteResult>("delete_deep_junk_files", { paths }),
+  delete_leftover_folders: (paths: string[]) => invoke<DeleteResult>("delete_leftover_folders", { paths }),
+  delete_leftovers_permanent: (paths: string[]) => invoke<DeleteResult>("delete_leftovers_permanent", { paths }),
+  cleanup_directory_contents: (p: string) => invoke<DeleteResult>("cleanup_directory_contents", { path: p }),
+  record_cleanup_action: (a: CleanupAction) => invoke<void>("record_cleanup_action", { action: a }),
+  open_recycle_bin: () => invoke<void>("open_recycle_bin"),
+};
+
+// ============ M4 空间腾挪（12，WindowsClear 移植） ============
+export const api_relocate = {
+  scan_relocate_targets: () => invoke<RelocateTarget[]>("scan_relocate_targets"),
+  list_locking_processes: (p: string) => invoke<LockingProcess[]>("list_locking_processes", { path: p }),
+  kill_locking_process: (pid: number) => invoke<void>("kill_locking_process", { pid }),
+  start_migration: (req: MigrationRequest) => invoke<MigrationRecord>("start_migration", { request: req }),
+  pause_migration: () => invoke<void>("pause_migration"),
+  resume_migration: () => invoke<void>("resume_migration"),
+  cancel_migration: () => invoke<void>("cancel_migration"),
+  restore_migration: (recordId: string) => invoke<void>("restore_migration", { record_id: recordId }),
+  list_migration_history: () => invoke<MigrationRecord[]>("list_migration_history"),
+  remove_migration_record: (recordId: string) => invoke<void>("remove_migration_record", { record_id: recordId }),
+  get_relocate_config: () => invoke<RelocateConfig>("get_relocate_config"),
+  save_relocate_config: (cfg: RelocateConfig) => invoke<void>("save_relocate_config", { config: cfg }),
+};
+
+// ============ M5 系统瘦身（28） ============
+export const api_slim = {
+  get_system_slim_status: () => invoke<SlimStatus>("get_system_slim_status"),
+  enable_hibernation: () => invoke<void>("enable_hibernation"),
+  disable_hibernation: () => invoke<void>("disable_hibernation"),
+  cleanup_winsxs: () => invoke<DismResult>("cleanup_winsxs"),
+  cleanup_winsxs_resetbase: () => invoke<DismResult>("cleanup_winsxs_resetbase"),
+  rebuild_search_index: () => invoke<void>("rebuild_search_index"),
+  open_virtual_memory_settings: () => invoke<void>("open_virtual_memory_settings"),
+  open_storage_settings: () => invoke<void>("open_storage_settings"),
+  open_disk_cleanup: () => invoke<void>("open_disk_cleanup"),
+  scan_old_drivers: () => invoke<DriverReport>("scan_old_drivers"),
+  delete_old_drivers: (ids: string[]) => invoke<DeleteResult>("delete_old_drivers", { ids }),
+  restore_all_driver_backups: () => invoke<DriverRestoreResult>("restore_all_driver_backups"),
+  open_driver_backup_dir: () => invoke<void>("open_driver_backup_dir"),
+  scan_registry_redundancy: () => invoke<RegistryReport>("scan_registry_redundancy"),
+  delete_registry_entries: (entries: RegistryEntry[]) => invoke<RegistryDeleteResult>("delete_registry_entries", { entries }),
+  open_registry_backup_dir: () => invoke<void>("open_registry_backup_dir"),
+  scan_shell_icons: () => invoke<ShellIconReport>("scan_shell_icons"),
+  remove_shell_icon: (id: string) => invoke<void>("remove_shell_icon", { id }),
+  restore_shell_icon: () => invoke<void>("restore_shell_icon"),
+  unlock_shell_icon: () => invoke<void>("unlock_shell_icon"),
+  open_shell_icon_backup_dir: () => invoke<void>("open_shell_icon_backup_dir"),
+  open_shell_icon_log: () => invoke<void>("open_shell_icon_log"),
+  open_shell_icon_registry: () => invoke<void>("open_shell_icon_registry"),
+  restart_explorer: () => invoke<void>("restart_explorer"),
+  scan_context_menu: () => invoke<ContextMenuReport>("scan_context_menu"),
+  delete_context_menu_entries: (ids: string[]) => invoke<DeleteResult>("delete_context_menu_entries", { ids }),
+  scan_ai_model_assets: () => invoke<AiModelReport>("scan_ai_model_assets"),
+  delete_ai_model: (id: string) => invoke<DeleteResult>("delete_ai_model", { id }),
+};
+
+// ============ M6 启动与内存（3） ============
+export const api_tune = {
+  list_startup_items: () => invoke<StartupItem[]>("list_startup_items"),
+  set_startup_enabled: (id: string, enabled: boolean) => invoke<void>("set_startup_enabled", { id, enabled }),
+  open_startup_manager: () => invoke<void>("open_startup_manager"),
+};
+
+// ============ M7 高级维护（5） ============
+export const api_advanced = {
+  analyze_system_clean: () => invoke<SystemAnalyzeReport>("analyze_system_clean"),
+  run_deep_analyze: () => invoke<DeepAnalyzeReport>("run_deep_analyze"),
+  run_deep_clean: () => invoke<DeepCleanReport>("run_deep_clean"),
+  run_deep_clean_system: () => invoke<SystemCleanReport>("run_deep_clean_system"),
+  collect_rules: (includeDrives: boolean) => invoke<CollectResult>("collect_rules", { include_drives: includeDrives }),
+};
+
+// ============ M8 设置与工具（22） ============
+export const api_settings = {
+  check_admin_privilege: () => invoke<boolean>("check_admin_privilege"),
+  check_admin_for_path: (p: string) => invoke<boolean>("check_admin_for_path", { path: p }),
+  get_data_directory: () => invoke<string>("get_data_directory"),
+  set_data_directory: (p: string) => invoke<void>("set_data_directory", { path: p }),
+  get_storage_location_info: () => invoke<StorageLocationInfo>("get_storage_location_info"),
+  get_storage_write_diagnostic: () => invoke<WriteDiagnostic>("get_storage_write_diagnostic"),
+  list_clearable_data_items: () => invoke<ClearableItem[]>("list_clearable_data_items"),
+  clear_local_data: () => invoke<void>("clear_local_data"),
+  clear_selected_local_data: (keys: string[]) => invoke<void>("clear_selected_local_data", { keys }),
+  migrate_legacy_portable_data: () => invoke<void>("migrate_legacy_portable_data"),
+  get_distribution_channel: () => invoke<string>("get_distribution_channel"),
+  open_logs_folder: () => invoke<void>("open_logs_folder"),
+  pick_folder_dialog: (title: string) => invoke<string | null>("pick_folder_dialog", { title }),
+  open_file: (p: string) => invoke<void>("open_file", { path: p }),
+  reveal_in_folder: (p: string) => invoke<void>("reveal_in_folder", { path: p }),
+  format_size: (bytes: number) => invoke<string>("format_size", { bytes }),
+  get_physical_size: (p: string) => invoke<number>("get_physical_size", { path: p }),
+  verify_integrity: () => invoke<IntegrityReport>("verify_integrity"),
+  scan_service_available: () => invoke<boolean>("scan_service_available"),
+  repair_scan_service: () => invoke<void>("repair_scan_service"),
+  open_apps_settings: () => invoke<void>("open_apps_settings"),
+  set_always_on_top: (v: boolean) => invoke<void>("set_always_on_top", { value: v }),
+};
+
+export const api: Record<ModuleId, Record<string, (...a: any[]) => any>> = {
+  dashboard: api_dashboard,
+  insight: api_insight,
+  clean: api_clean,
+  relocate: api_relocate,
+  slim: api_slim,
+  tune: api_tune,
+  advanced: api_advanced,
+  settings: api_settings,
+};
+
+// ==== P1 骨架占位类型（接入真实后端时逐个替换为共享类型定义） ====
+export type DriveInfo = { mount: string; label: string; total: number; free: number; fs: string; kind: string };
+export type DiskInfo = unknown;
+export type DiskHealth = unknown;
+export type HealthScore = unknown;
+export type SystemInfo = unknown;
+export type MemoryReport = unknown;
+export type PagefileCheck = unknown;
+export type TreeNode = {
+  name: string; path: string; size: number; isDir: boolean; hasChildren: boolean;
+  category: string; friendlyName?: string; description?: string; safety: string;
+  children?: TreeNode[];
+};
+export type ScanCache = { scannedAt: number; root: string; tree: TreeNode };
+export type GrowthReport = unknown;
+export type GrowthDirDetails = unknown;
+export type GrowthFileDetails = unknown;
+export type GrowthTree = unknown;
+export type HotspotReport = unknown;
+export type LargeFileReport = unknown;
+export type CleanupScan = unknown;
+export type CleanupReport = { freed: number; free_before: number; free_after: number };
+export type CleanupStats = { totalFreed: number; totalRuns: number; lastAt: number };
+export type OrphanScan = { confirmed: { path: string; app_name: string; size: number; note?: string }[] };
+export type ResidueReport = { freed: number; errors: string[] };
+export type JunkReport = unknown;
+export type DeepJunkReport = unknown;
+export type DeepJunkPage = unknown;
+export type CategoryReport = unknown;
+export type Category = unknown;
+export type SocialCacheReport = unknown;
+export type LeftoverReport = unknown;
+export type LeftoverSafety = unknown;
+export type DeleteResult = unknown;
+export type CleanupAction = unknown;
+export type RelocateTarget = { label: string; source: string; target_subdir: string; size: number; path: string };
+export type LockingProcess = { pid: number; name: string; path?: string };
+export type MigrationRequest = { sources: string[]; target_root: string; auto_kill: boolean };
+export type MigrationRecord = {
+  id: string; name: string; source_path: string; target_path: string;
+  size_bytes: number; timestamp: number; batch_id?: string; batch_timestamp?: number;
+};
+export type RelocateConfig = {
+  version: number; target_root: string;
+  scan_sources: { enabled: boolean; label: string; path: string; target_subdir: string }[];
+};
+export type SlimStatus = unknown;
+export type DismResult = unknown;
+export type DriverReport = unknown;
+export type DriverRestoreResult = unknown;
+export type RegistryReport = unknown;
+export type RegistryEntry = unknown;
+export type RegistryDeleteResult = unknown;
+export type ShellIconReport = unknown;
+export type ContextMenuReport = unknown;
+export type AiModelReport = unknown;
+export type StartupItem = {
+  id: string; name: string; command: string; location: string;
+  enabled: boolean; needsAdmin: boolean; memMb?: number;
+  advice: string; reason?: string; icon?: string;
+};
+export type SystemAnalyzeReport = unknown;
+export type DeepAnalyzeReport = unknown;
+export type DeepCleanReport = unknown;
+export type SystemCleanReport = unknown;
+export type CollectResult = unknown;
+export type StorageLocationInfo = unknown;
+export type WriteDiagnostic = unknown;
+export type ClearableItem = unknown;
+export type IntegrityReport = unknown;

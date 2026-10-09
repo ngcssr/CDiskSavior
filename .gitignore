@@ -38,3 +38,7 @@ envs/
 .idea/
 *.swp
 *~
+
+# ---- app 工程特有 ----
+app/src-tauri/gen/
+app/app-icon.png
