@@ -112,23 +112,7 @@ pub fn clean_orphan_dirs(paths: Vec<String>) -> Result<serde_json::Value, String
 }
 
 // ============ M4 空间腾挪 ============
-
-#[tauri::command]
-pub fn get_relocate_config() -> Result<serde_json::Value, String> {
-    // R3：P2 接入 legacy 探测链后返回真实配置
-    Ok(serde_json::json!({
-        "version": 1,
-        "target_root": null,
-        "scan_sources": [],
-        "phase": "P1 骨架：默认迁移根待 §3.2 运行时解析"
-    }))
-}
-
-#[tauri::command]
-pub fn save_relocate_config(config: serde_json::Value) -> Result<(), String> {
-    let _ = config;
-    Err("P1 骨架：save_relocate_config 待 P2（含 R9 校验）".into())
-}
+// M4 命令已移至 relocate_commands.rs（P2 实现）
 
 // ============ M6 启动与内存 ============
 

@@ -19,14 +19,31 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# P2: M4 空间腾挪 + 基础设施（设计文档 §5.1）
+junction = "1"                                              # V8 修复：FSCTL 创建 Junction，弃 cmd /C mklink
+uuid = { version = "1", features = ["v4"] }                  # 迁移记录 ID
+chrono = { version = "0.4", features = ["serde"] }           # 时间戳
+walkdir = "2"                                               # 目录遍历
+filetime = "0.2"                                            # V7：保留 mtime
+log = "0.4"                                                 # 日志
+windows-sys = { version = "0.59", features = [               # Win32 API（disk-butler 同版）
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Threading",
+    "Win32_System_RestartManager",
+    "Win32_Security",
+    "Win32_UI_Shell",
+    "Win32_System_Com",
+    "Win32_System_SystemInformation",
+    "Win32_System_Pipes",
+    "Win32_System_Diagnostics_ToolHelp",
+] }
+
 # 修复：tauri-utils → schemars/preserve_order → indexmap 1.9 的 build.rs 用 autocfg 探测 std，
 # MSVC 装在非标准路径时探测失败 → has_std 未设置 → no_std 分支（IndexMap 泛型无默认值）→ E0107。
 # 显式启用 std feature 跳过探测（CARGO_FEATURE_STD 直接 emit has_std）。
 indexmap = { version = "1", features = ["std"] }
-
-# P1 骨架最小集；P2+ 按设计文档 §5.1 逐步引入
-# jwalk = "0.8"
-# windows-sys = ...
 
 [profile.release]
 opt-level = 1
