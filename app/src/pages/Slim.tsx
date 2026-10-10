@@ -1,8 +1,10 @@
 import { useEffect, useState, useCallback } from "react";
 import { api_slim } from "../api/commands";
+import type { ShellIconInfo, ShellIconTarget } from "../api/commands";
 import {
   Wrench, Power, Layers, HardDrive,
-  Bot, RotateCw, ExternalLink, Trash2,
+  Bot, RotateCw, ExternalLink, Trash2, Monitor,
+  Lock, LockOpen, Undo2, FolderOpen, FileText,
 } from "lucide-react";
 
 function fmt(bytes: number): string {
@@ -16,6 +18,8 @@ export default function Slim() {
   const [status, setStatus] = useState<any>(null);
   const [drivers, setDrivers] = useState<any[]>([]);
   const [aiModels, setAiModels] = useState<any[]>([]);
+  const [shellIcons, setShellIcons] = useState<ShellIconInfo[] | null>(null);
+  const [shellIconsLoading, setShellIconsLoading] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
@@ -36,6 +40,40 @@ export default function Slim() {
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  const scanShellIcons = useCallback(async () => {
+    setShellIconsLoading(true);
+    setError(null);
+    try {
+      setShellIcons(await api_slim.scan_shell_icons());
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setShellIconsLoading(false);
+    }
+  }, []);
+
+  const iconTarget = (info: ShellIconInfo): ShellIconTarget => ({
+    clsid: info.clsid,
+    hive: info.hive,
+    registryView: info.registryView,
+    entryKind: info.entryKind,
+  });
+
+  const execIcon = async (fn: () => Promise<{ message: string }>, label: string) => {
+    setBusy(label);
+    setError(null);
+    setResult(null);
+    try {
+      const r = await fn();
+      setResult(r.message || `${label} ✓`);
+      await scanShellIcons();
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const exec = async (fn: () => Promise<any>, label: string) => {
     setBusy(label);
@@ -205,6 +243,120 @@ export default function Slim() {
             </div>
           ) : (
             <div className="py-4 text-center text-sm text-[var(--color-text-secondary)]">未发现 AI 模型</div>
+          )}
+        </section>
+        {/* 外壳入口（此电脑/导航窗格第三方图标） */}
+        <section className="mb-6">
+          <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text-secondary)]">
+            <Monitor size={14} /> 外壳入口（此电脑 / 导航窗格）
+            {shellIcons !== null && <span className="text-xs font-normal">（{shellIcons.length}）</span>}
+            <span className="flex-1" />
+            <button
+              onClick={() => api_slim.open_shell_icon_backup_dir().catch((e: any) => setError(e?.message ?? String(e)))}
+              title="打开备份目录"
+              className="rounded p-1 hover:bg-[var(--color-surface-hover)]"
+            >
+              <FolderOpen size={13} />
+            </button>
+            <button
+              onClick={() => api_slim.open_shell_icon_log().catch((e: any) => setError(e?.message ?? String(e)))}
+              title="打开操作记录"
+              className="rounded p-1 hover:bg-[var(--color-surface-hover)]"
+            >
+              <FileText size={13} />
+            </button>
+          </h2>
+
+          {shellIcons === null ? (
+            <div className="py-4 text-center">
+              <button
+                onClick={scanShellIcons}
+                disabled={shellIconsLoading || busy !== null}
+                className="rounded-lg bg-[var(--color-primary)] px-4 py-1.5 text-sm text-white disabled:opacity-50"
+              >
+                {shellIconsLoading ? "扫描中…" : "扫描第三方入口"}
+              </button>
+              <div className="mt-2 text-xs text-[var(--color-text-secondary)]">
+                识别此电脑与导航窗格中的第三方软件图标（百度网盘、WPS 等）
+              </div>
+            </div>
+          ) : shellIcons.length === 0 ? (
+            <div className="py-4 text-center text-sm text-[var(--color-text-secondary)]">未发现第三方外壳入口</div>
+          ) : (
+            <div className="space-y-1">
+              {shellIcons.map((info) => (
+                <div key={`${info.hive}:${info.registryView}:${info.entryKind}:${info.clsid}`}
+                  className="flex items-center gap-3 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      {info.isLocked && <Lock size={12} className="text-[var(--color-caution)]" />}
+                      <span className="truncate">{info.name}</span>
+                      {info.applicationName && info.applicationName !== info.name && (
+                        <span className="rounded-full bg-[var(--color-primary)]/10 px-1.5 py-0.5 text-[10px] text-[var(--color-primary)]">
+                          {info.applicationName}
+                        </span>
+                      )}
+                      <span className="rounded-full bg-[var(--color-surface-hover)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-secondary)]">
+                        {info.entryKind === "myComputer" ? "此电脑" : "导航窗格"} · {info.hive}{info.registryView !== "default" && ` ${info.registryView}位`}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 truncate font-mono text-[10px] text-[var(--color-text-dim)]" title={info.riskReason}>
+                      {info.regPath}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      title="打开注册表编辑器定位"
+                      onClick={() => api_slim.open_shell_icon_registry(iconTarget(info)).catch((e: any) => setError(e?.message ?? String(e)))}
+                      className="rounded p-1 hover:bg-[var(--color-surface-hover)]"
+                    >
+                      <ExternalLink size={13} />
+                    </button>
+                    {info.isLocked ? (
+                      <>
+                        <button
+                          title="恢复节点（从备份导入）"
+                          onClick={() => execIcon(() => api_slim.restore_shell_icon(iconTarget(info)), `恢复 ${info.name}`)}
+                          disabled={busy !== null}
+                          className="rounded p-1 text-[var(--color-primary)] hover:bg-[var(--color-surface-hover)] disabled:opacity-50"
+                        >
+                          <Undo2 size={13} />
+                        </button>
+                        <button
+                          title="解除防复活锁定（不恢复内容）"
+                          onClick={() => execIcon(() => api_slim.unlock_shell_icon(iconTarget(info)), `解锁 ${info.name}`)}
+                          disabled={busy !== null}
+                          className="rounded p-1 text-[var(--color-caution)] hover:bg-[var(--color-surface-hover)] disabled:opacity-50"
+                        >
+                          <LockOpen size={13} />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          title="删除（自动备份，可恢复）"
+                          onClick={() => execIcon(() => api_slim.remove_shell_icon(iconTarget(info), 1), `删除 ${info.name}`)}
+                          disabled={busy !== null}
+                          className="rounded p-1 text-[var(--color-danger)] hover:bg-[var(--color-surface-hover)] disabled:opacity-50"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                        {info.entryKind === "myComputer" && (
+                          <button
+                            title="彻底删除+防复活（锁定父级，需管理员）"
+                            onClick={() => execIcon(() => api_slim.remove_shell_icon(iconTarget(info), 2), `彻底删除 ${info.name}`)}
+                            disabled={busy !== null}
+                            className="rounded p-1 text-[var(--color-danger)] hover:bg-[var(--color-danger-bg-soft)] disabled:opacity-50"
+                          >
+                            <Lock size={13} />
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </section>
       </div>

@@ -112,13 +112,13 @@ export const api_slim = {
   scan_registry_redundancy: () => invoke<RegistryReport>("scan_registry_redundancy"),
   delete_registry_entries: (entries: RegistryEntry[]) => invoke<RegistryDeleteResult>("delete_registry_entries", { entries }),
   open_registry_backup_dir: () => invoke<void>("open_registry_backup_dir"),
-  scan_shell_icons: () => invoke<ShellIconReport>("scan_shell_icons"),
-  remove_shell_icon: (id: string) => invoke<void>("remove_shell_icon", { id }),
-  restore_shell_icon: () => invoke<void>("restore_shell_icon"),
-  unlock_shell_icon: () => invoke<void>("unlock_shell_icon"),
+  scan_shell_icons: () => invoke<ShellIconInfo[]>("scan_shell_icons"),
+  remove_shell_icon: (target: ShellIconTarget, mode: number) => invoke<ShellIconOperationResult>("remove_shell_icon", { target, mode }),
+  restore_shell_icon: (target: ShellIconTarget) => invoke<ShellIconOperationResult>("restore_shell_icon", { target }),
+  unlock_shell_icon: (target: ShellIconTarget) => invoke<ShellIconOperationResult>("unlock_shell_icon", { target }),
   open_shell_icon_backup_dir: () => invoke<void>("open_shell_icon_backup_dir"),
   open_shell_icon_log: () => invoke<void>("open_shell_icon_log"),
-  open_shell_icon_registry: () => invoke<void>("open_shell_icon_registry"),
+  open_shell_icon_registry: (target: ShellIconTarget) => invoke<void>("open_shell_icon_registry", { target }),
   restart_explorer: () => invoke<void>("restart_explorer"),
   scan_context_menu: () => invoke<ContextMenuReport>("scan_context_menu"),
   delete_context_menu_entries: (ids: string[]) => invoke<DeleteResult>("delete_context_menu_entries", { ids }),
@@ -240,6 +240,20 @@ export type DriverRestoreResult = unknown;
 export type RegistryReport = unknown;
 export type RegistryEntry = unknown;
 export type RegistryDeleteResult = unknown;
+// 外壳入口（此电脑/导航窗格第三方入口）
+export type ShellEntryKind = "myComputer" | "navigationPane";
+export type ShellIconTarget = {
+  clsid: string; hive: string; registryView: string; entryKind: ShellEntryKind;
+};
+export type ShellIconInfo = {
+  entryKind: ShellEntryKind; clsid: string; name: string;
+  applicationName: string | null; regPath: string; hive: string; registryView: string;
+  sourcePath: string | null; riskLevel: string; riskReason: string;
+  isSystemProtected: boolean; isLocked: boolean;
+};
+export type ShellIconOperationResult = {
+  success: boolean; message: string; backupPath: string | null; needsExplorerRefresh: boolean;
+};
 export type ShellIconReport = unknown;
 export type ContextMenuReport = unknown;
 export type AiModelEntry = { id: string; name: string; path: string; size: number; lastModified: number };

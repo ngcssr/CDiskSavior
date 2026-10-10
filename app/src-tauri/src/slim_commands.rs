@@ -101,29 +101,74 @@ pub fn open_registry_backup_dir() -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn scan_shell_icons() -> Result<serde_json::Value, String> {
-    Ok(serde_json::json!({ "icons": [], "phase": "P5" }))
+pub async fn scan_shell_icons() -> Result<Vec<crate::shell_icons::ShellIconInfo>, String> {
+    tauri::async_runtime::spawn_blocking(crate::shell_icons::scan_shell_icons)
+        .await
+        .map_err(|e| format!("外壳入口扫描任务失败: {}", e))?
+}
+
+/// 移除外壳入口（mode 1=普通删除并备份，2=彻底删除+父级防复活锁）
+#[tauri::command]
+pub async fn remove_shell_icon(
+    target: crate::shell_icons::ShellIconTarget,
+    mode: u8,
+) -> Result<crate::shell_icons::ShellIconOperationResult, String> {
+    let target_for_task = target.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        crate::shell_icons::remove_shell_icon(&target_for_task, mode)
+    })
+    .await
+    .map_err(|e| format!("外壳入口处理任务失败: {}", e))?;
+    crate::shell_icons::record_shell_icon_operation(
+        &target,
+        if mode == 2 { "彻底删除" } else { "删除" },
+        &result,
+    );
+    result
 }
 
 #[tauri::command]
-pub fn remove_shell_icon(id: String) -> Result<(), String> {
-    Err(format!("待实现: {}", id))
+pub async fn restore_shell_icon(
+    target: crate::shell_icons::ShellIconTarget,
+) -> Result<crate::shell_icons::ShellIconOperationResult, String> {
+    let target_for_task = target.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        crate::shell_icons::restore_shell_icon(&target_for_task)
+    })
+    .await
+    .map_err(|e| format!("恢复外壳入口任务失败: {}", e))?;
+    crate::shell_icons::record_shell_icon_operation(&target, "恢复节点", &result);
+    result
 }
 
 #[tauri::command]
-pub fn restore_shell_icon() -> Result<(), String> { Err("待实现".into()) }
+pub async fn unlock_shell_icon(
+    target: crate::shell_icons::ShellIconTarget,
+) -> Result<crate::shell_icons::ShellIconOperationResult, String> {
+    let target_for_task = target.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        crate::shell_icons::unlock_shell_icon(&target_for_task)
+    })
+    .await
+    .map_err(|e| format!("解锁外壳入口任务失败: {}", e))?;
+    crate::shell_icons::record_shell_icon_operation(&target, "解除防复活", &result);
+    result
+}
 
 #[tauri::command]
-pub fn unlock_shell_icon() -> Result<(), String> { Err("待实现".into()) }
+pub fn open_shell_icon_backup_dir() -> Result<(), String> {
+    crate::shell_icons::open_shell_icon_backup_dir()
+}
 
 #[tauri::command]
-pub fn open_shell_icon_backup_dir() -> Result<(), String> { Err("待实现".into()) }
+pub fn open_shell_icon_log() -> Result<(), String> {
+    crate::shell_icons::open_shell_icon_log()
+}
 
 #[tauri::command]
-pub fn open_shell_icon_log() -> Result<(), String> { Err("待实现".into()) }
-
-#[tauri::command]
-pub fn open_shell_icon_registry() -> Result<(), String> { Err("待实现".into()) }
+pub fn open_shell_icon_registry(target: crate::shell_icons::ShellIconTarget) -> Result<(), String> {
+    crate::shell_icons::open_shell_icon_registry(&target)
+}
 
 #[tauri::command]
 pub async fn restart_explorer() -> Result<(), String> {

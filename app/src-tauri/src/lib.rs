@@ -1,3 +1,4 @@
+mod bigfiles;
 mod cleaner;
 mod growth;
 mod health;
@@ -5,6 +6,7 @@ mod commands;
 mod relocate_commands;
 mod relocate;
 mod scan;
+mod shell_icons;
 mod slim;
 mod slim_commands;
 mod state;
@@ -28,6 +30,8 @@ pub fn run() {
             commands::scan_hotspot,
             commands::create_disk_snapshot,
             commands::compare_disk_growth,
+            commands::scan_large_files,
+            commands::cancel_large_file_scan,
             commands::has_disk_snapshot,
             commands::load_scan_cache,
             // M3 一键清理
