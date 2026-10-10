@@ -35,12 +35,24 @@ pub fn get_status() -> SlimStatus {
     }
 }
 
+/// 隐藏控制台子进程窗口（CREATE_NO_WINDOW）
+/// 修复：控制台程序（powercfg / sc / pnputil / powershell）默认弹出黑框闪烁
+fn cmd(program: &str) -> std::process::Command {
+    let mut c = std::process::Command::new(program);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        c.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    c
+}
+
 // ============ 休眠 ============
 
 /// 检查休眠是否开启
 fn check_hibernation() -> bool {
     // powercfg /a 输出含 "休眠" 或 "Hibernation" → 开启
-    let out = std::process::Command::new("powercfg")
+    let out = cmd("powercfg")
         .args(["/a"])
         .output();
     match out {
@@ -112,7 +124,7 @@ pub fn rebuild_search_index() -> Result<String, String> {
 }
 
 fn check_search_service() -> bool {
-    std::process::Command::new("sc")
+    cmd("sc")
         .args(["query", "WSearch"])
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).contains("RUNNING"))
@@ -134,7 +146,7 @@ pub struct DriverEntry {
 /// 扫描旧驱动（pnputil 枚举 + 按日期分组）
 pub fn scan_old_drivers() -> Vec<DriverEntry> {
     // P5 简化：用 pnputil /enum-drivers 解析第三方驱动列表
-    let out = std::process::Command::new("pnputil")
+    let out = cmd("pnputil")
         .args(["/enum-drivers"])
         .output();
     match out {
@@ -371,7 +383,7 @@ fn run_elevated_ps(script: &str) -> Result<String, String> {
         encoded
     );
 
-    let result = std::process::Command::new("powershell")
+    let result = cmd("powershell")
         .args(["-NoProfile", "-Command", &outer])
         .output()
         .map_err(|e| format!("提权执行失败: {}", e));
