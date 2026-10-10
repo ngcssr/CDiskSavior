@@ -21,9 +21,10 @@ export interface AppState {
 }
 
 const stored = localStorage.getItem("cdisk-savior-theme");
-const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+// 默认深色（Refined Industrial 方向以深底为设计基准）；
+// 用户显式切换后持久化，不再跟随系统
 const initialTheme: "light" | "dark" =
-  stored === "dark" || stored === "light" ? stored : prefersDark ? "dark" : "light";
+  stored === "dark" || stored === "light" ? stored : "dark";
 
 export const useAppStore = create<AppState>()(
   persist(
