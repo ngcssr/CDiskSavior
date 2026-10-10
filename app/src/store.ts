@@ -20,11 +20,21 @@ export interface AppState {
   toggleTheme: () => void;
 }
 
+// 一次性迁移：旧默认（深色）可能被 persist 持久化到了本机，
+// 直接清掉旧键，让"默认浅色"对已有用户同样生效。
+// persist 键同步换 v2，避免再次命中旧值。
+if (localStorage.getItem("cdisk-savior-theme") === "dark") {
+  localStorage.removeItem("cdisk-savior-theme");
+}
+const legacy = localStorage.getItem("cdisk-savior-app");
+if (legacy && legacy.includes('"dark"')) {
+  localStorage.removeItem("cdisk-savior-app");
+}
+
 const stored = localStorage.getItem("cdisk-savior-theme");
-// 默认深色（Refined Industrial 方向以深底为设计基准）；
-// 用户显式切换后持久化，不再跟随系统
+// 默认浅色（用户指定）；显式切换后持久化
 const initialTheme: "light" | "dark" =
-  stored === "dark" || stored === "light" ? stored : "dark";
+  stored === "dark" || stored === "light" ? stored : "light";
 
 export const useAppStore = create<AppState>()(
   persist(
@@ -40,7 +50,7 @@ export const useAppStore = create<AppState>()(
         }),
     }),
     {
-      name: "cdisk-savior-app",
+      name: "cdisk-savior-app-v2",
       partialize: (s) => ({ theme: s.theme }),
     }
   )

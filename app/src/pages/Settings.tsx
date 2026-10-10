@@ -85,14 +85,6 @@ export default function Settings() {
           </section>
         )}
 
-        {/* 关于 */}
-        <section className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] p-4 text-center">
-          <div className="text-lg font-bold">CDisk Savior</div>
-          <div className="text-xs text-[var(--color-text-secondary)]">磁盘与内存维护助手 · v0.1.0</div>
-          <div className="mt-2 text-xs text-[var(--color-text-secondary)]">
-            基于 disk-butler + light-c + WindowsClear 三方源码合并
-          </div>
-        </section>
       </div>
     </div>
   );
