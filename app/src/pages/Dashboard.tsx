@@ -20,6 +20,8 @@ function barClass(pct: number): string {
 export default function Dashboard() {
   const [drives, setDrives] = useState<DriveInfo[]>([]);
   const [mem, setMem] = useState<{ total: number; available: number; usedPercent: number; swapTotal?: number } | null>(null);
+  const [health, setHealth] = useState<import("../api/commands").HealthScore | null>(null);
+  const [physDisks, setPhysDisks] = useState<import("../api/commands").DiskHealth[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,6 +35,9 @@ export default function Dashboard() {
       ]);
       setDrives(d);
       setMem(m.overview);
+      // 健康评分与物理盘状态独立加载（失败不阻塞主内容）
+      api_dashboard.get_health_score().then(setHealth).catch(() => {});
+      api_dashboard.get_disk_health().then(setPhysDisks).catch(() => {});
     } catch (e: any) {
       setError(e?.message ?? String(e));
     } finally {
@@ -135,6 +140,68 @@ export default function Dashboard() {
           })}
         </div>
       </section>
+
+      {/* 系统健康评分（light-c health_score 移植） */}
+      {health && (
+        <section className="mb-5 rise rise-2">
+          <h2 className="mb-3 text-[12px] font-semibold uppercase tracking-wider text-[var(--color-text-dim)]">系统健康评分</h2>
+          <div className="card card-hover p-4">
+            <div className="flex items-center gap-5">
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl"
+                style={{
+                  background: health.score >= 85 ? "rgba(52,211,153,0.12)" : health.score >= 70 ? "rgba(34,211,238,0.12)" : health.score >= 50 ? "rgba(251,191,36,0.12)" : "rgba(248,113,113,0.12)",
+                }}>
+                <span className="font-display font-num text-[26px] font-bold" style={{
+                  color: health.score >= 85 ? "var(--color-safe)" : health.score >= 70 ? "var(--color-primary)" : health.score >= 50 ? "var(--color-caution)" : "var(--color-danger)",
+                }}>
+                  {health.score}
+                </span>
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-display text-[15px] font-bold">{health.grade}</span>
+                  <span className="text-[11px] text-[var(--color-text-dim)]">满分 100</span>
+                </div>
+                <div className="font-num mt-1.5 grid grid-cols-3 gap-3 text-[11px] text-[var(--color-text-secondary)]">
+                  <div>磁盘空间 <strong>{health.diskScore}</strong>/40<span className="text-[var(--color-text-dim)]">（剩余 {health.diskFreePercent.toFixed(0)}%）</span></div>
+                  <div>休眠文件 <strong>{health.hibernationScore}</strong>/30<span className="text-[var(--color-text-dim)]">（{health.hasHibernation ? formatSize(health.hibernationSize) : "已关闭"}）</span></div>
+                  <div>垃圾文件 <strong>{health.junkScore}</strong>/30<span className="text-[var(--color-text-dim)]">（{formatSize(health.junkSize)}）</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* 物理磁盘健康（light-c disk_health 移植） */}
+      {physDisks.length > 0 && (
+        <section className="mb-5 rise rise-3">
+          <h2 className="mb-3 text-[12px] font-semibold uppercase tracking-wider text-[var(--color-text-dim)]">物理磁盘健康</h2>
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            {physDisks.map((d, i) => (
+              <div key={i} className="card card-hover flex items-center gap-3 p-3.5">
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{
+                    background: d.healthStatus === "Healthy" ? "var(--color-safe)" : d.healthStatus === "Warning" ? "var(--color-caution)" : "var(--color-danger)",
+                    boxShadow: `0 0 8px ${d.healthStatus === "Healthy" ? "rgba(52,211,153,0.5)" : "rgba(248,113,113,0.5)"}`,
+                  }}
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="truncate text-[13px] font-medium">{d.friendlyName || d.model}</div>
+                  <div className="text-[11px] text-[var(--color-text-dim)]">{d.mediaType} · {d.busType} · {formatSize(d.size)}</div>
+                </div>
+                <span className="chip" style={{
+                  color: d.healthStatus === "Healthy" ? "var(--color-safe)" : "var(--color-danger)",
+                  borderColor: d.healthStatus === "Healthy" ? "rgba(52,211,153,0.3)" : "rgba(248,113,113,0.3)",
+                }}>
+                  {d.healthStatus === "Healthy" ? "健康" : d.healthStatus === "Warning" ? "警告" : d.healthStatus}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* 内存 */}
       {mem && (

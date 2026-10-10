@@ -17,7 +17,7 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
 export const api_dashboard = {
   get_drives: () => invoke<DriveInfo[]>("get_drives"),
   get_disk_info: () => invoke<DiskInfo>("get_disk_info"),
-  get_disk_health: () => invoke<DiskHealth>("get_disk_health"),
+  get_disk_health: () => invoke<DiskHealth[]>("query_disk_health"),
   get_health_score: () => invoke<HealthScore>("get_health_score"),
   get_system_info: () => invoke<SystemInfo>("get_system_info"),
   memory_report: () => invoke<MemoryReport>("memory_report"),
@@ -178,8 +178,6 @@ export const api: Record<ModuleId, Record<string, (...a: any[]) => any>> = {
 // ==== P1 骨架占位类型（接入真实后端时逐个替换为共享类型定义） ====
 export type DriveInfo = { mount: string; label: string; total: number; free: number; fs: string; kind: string };
 export type DiskInfo = unknown;
-export type DiskHealth = unknown;
-export type HealthScore = unknown;
 export type SystemInfo = unknown;
 export type MemoryReport = {
   overview: { total: number; available: number; usedPercent: number; swapTotal?: number; swapAvailable?: number };
@@ -280,3 +278,14 @@ export type LeftoverSafety = {
   path: string; score: number; verdict: string; reasons: string[];
 };
 export type LeftoverDeleteReport = { freed: number; errors: string[]; skipped: string[] };
+
+// 磁盘健康与评分
+export type DiskHealth = {
+  model: string; mediaType: string; busType: string;
+  healthStatus: string; size: number; friendlyName: string;
+};
+export type HealthScore = {
+  score: number; diskScore: number; hibernationScore: number; junkScore: number;
+  diskFreePercent: number; hasHibernation: boolean; hibernationSize: number;
+  junkSize: number; grade: string;
+};

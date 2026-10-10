@@ -1,4 +1,5 @@
 mod cleaner;
+mod health;
 mod commands;
 mod relocate_commands;
 mod relocate;
@@ -17,6 +18,8 @@ pub fn run() {
             // M1 总览
             commands::get_drives,
             commands::memory_report,
+            commands::query_disk_health,
+            commands::get_health_score,
             commands::pagefile_check,
             // M2 磁盘透视
             commands::scan_drive,

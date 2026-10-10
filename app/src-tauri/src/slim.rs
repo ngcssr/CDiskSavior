@@ -47,6 +47,21 @@ fn cmd(program: &str) -> std::process::Command {
     c
 }
 
+/// 非提权执行 PowerShell 并捕获 stdout（供 health/disk_health 等查询用）
+pub fn run_powershell_capture(script: &str) -> Result<String, String> {
+    let utf16: Vec<u8> = script.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+    let encoded = base64_encode(&utf16);
+    let out = cmd("powershell")
+        .args(["-NoProfile", "-EncodedCommand", &encoded])
+        .output()
+        .map_err(|e| format!("执行失败: {}", e))?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        return Err(format!("执行失败: {}", stderr.trim()));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).to_string())
+}
+
 // ============ 休眠 ============
 
 /// 检查休眠是否开启

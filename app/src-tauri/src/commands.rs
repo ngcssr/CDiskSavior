@@ -17,6 +17,22 @@ pub fn memory_report() -> Result<serde_json::Value, String> {
     Ok(crate::scan::memory_report())
 }
 
+/// 磁盘健康（物理盘 SMART 健康状态）
+#[tauri::command]
+pub async fn query_disk_health() -> Result<Vec<crate::health::DiskHealth>, String> {
+    tauri::async_runtime::spawn_blocking(crate::health::query_disk_health)
+        .await
+        .map_err(|e| format!("查询失败: {}", e))?
+}
+
+/// 系统健康评分（100 = 磁盘 40 + 休眠 30 + 垃圾 30）
+#[tauri::command]
+pub async fn get_health_score() -> Result<crate::health::HealthScore, String> {
+    tauri::async_runtime::spawn_blocking(crate::health::calculate_health_score)
+        .await
+        .map_err(|e| format!("评分失败: {}", e))
+}
+
 /// 页面文件检查
 #[tauri::command]
 pub fn pagefile_check() -> Result<serde_json::Value, String> {
