@@ -5,7 +5,7 @@
 //! 设计文档 §6 C3 / §7 R4：按操作提权（disk-butler run_elevated_ps 模型）
 
 use serde::Serialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// 系统瘦身状态
 #[derive(Debug, Clone, Serialize)]
@@ -209,10 +209,12 @@ fn parse_pnputil(output: &str) -> Vec<DriverEntry> {
     entries
 }
 
-/// 删除旧驱动（pnputil /delete-driver，需提权）
+/// 删除旧驱动（先 pnputil /export-driver 备份到数据目录，再提权删除）
 pub fn delete_old_drivers(ids: &[String]) -> Result<u32, String> {
     let mut deleted = 0u32;
     for id in ids {
+        // 删除前备份驱动包（失败不阻断删除，但记录警告）
+        backup_driver_package(id);
         // id 是 oem*.inf 文件名
         let script = format!("pnputil /delete-driver {} /force", id);
         match run_elevated_ps(&script) {
@@ -223,33 +225,109 @@ pub fn delete_old_drivers(ids: &[String]) -> Result<u32, String> {
     Ok(deleted)
 }
 
-// ============ 注册表冗余扫描 ============
+/// 驱动备份目录：数据目录 driver_backups/<oemXX.inf>/
+fn driver_backup_dir() -> PathBuf {
+    crate::appdata::data_dir().join("driver_backups")
+}
 
-#[derive(Debug, Clone, Serialize)]
+/// 导出驱动包备份（pnputil /export-driver <inf> <dir>）
+fn backup_driver_package(published_name: &str) {
+    let dir = driver_backup_dir().join(published_name);
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        log::warn!("创建驱动备份目录失败: {}", e);
+        return;
+    }
+    match cmd("pnputil")
+        .args(["/export-driver", published_name])
+        .arg(&dir)
+        .output()
+    {
+        Ok(o) if o.status.success() => {
+            log::info!("驱动 {} 已备份到 {}", published_name, dir.display());
+        }
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            log::warn!("驱动 {} 备份导出失败: {}", published_name, stderr.trim());
+        }
+        Err(e) => log::warn!("驱动 {} 备份执行失败: {}", published_name, e),
+    }
+}
+
+/// 打开驱动备份目录
+pub fn open_driver_backup_dir() -> Result<(), String> {
+    let dir = driver_backup_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建驱动备份目录失败: {}", e))?;
+    std::process::Command::new("explorer")
+        .arg(&dir)
+        .spawn()
+        .map_err(|e| format!("打开驱动备份目录失败: {}", e))?;
+    Ok(())
+}
+
+/// 恢复全部驱动备份（pnputil /add-driver <inf> /install，需提权）
+pub fn restore_all_driver_backups() -> Result<DriverRestoreResult, String> {
+    let dir = driver_backup_dir();
+    if !dir.is_dir() {
+        return Err("当前数据目录没有找到驱动备份目录".to_string());
+    }
+
+    // 收集所有备份的 .inf 文件
+    let mut inf_files = Vec::new();
+    collect_inf_files(&dir, &mut inf_files);
+    if inf_files.is_empty() {
+        return Err("驱动备份目录中没有找到 INF 文件".to_string());
+    }
+
+    let mut restored = 0u32;
+    let mut failed = 0u32;
+    let mut details = Vec::new();
+    for inf in inf_files {
+        let inf_str = inf.to_string_lossy().to_string();
+        let script = format!("pnputil /add-driver \"{}\" /install", inf_str);
+        match run_elevated_ps(&script) {
+            Ok(_) => {
+                restored += 1;
+                details.push(format!("{} ✓", inf_str));
+            }
+            Err(e) => {
+                failed += 1;
+                details.push(format!("{} 失败: {}", inf_str, e));
+                log::warn!("恢复驱动备份 {} 失败: {}", inf_str, e);
+            }
+        }
+    }
+
+    Ok(DriverRestoreResult {
+        restored_count: restored,
+        failed_count: failed,
+        details,
+    })
+}
+
+fn collect_inf_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                collect_inf_files(&path, out);
+            } else if path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("inf")) {
+                out.push(path);
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RegistryEntry {
-    pub id: String,
-    pub key: String,
-    pub value: String,
-    pub data: String,
-    pub size: u64,
+pub struct DriverRestoreResult {
+    pub restored_count: u32,
+    pub failed_count: u32,
+    pub details: Vec<String>,
 }
 
-/// 扫描注册表冗余（已知路径：卸载残留、MUI 缓存等）
-pub fn scan_registry_redundancy() -> Vec<RegistryEntry> {
-    // P5 简化：扫描 Uninstall 下的无效条目
-    let entries = Vec::new();
-    // TODO: 用 winreg 扫描 HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall
-    // P5 暂不实现完整扫描——后端返回空列表，前端显示"未发现"
-    entries
-}
+// ============ 注册表冗余扫描（真实实现在 registry_clean.rs，此处仅类型再导出） ============
 
-/// 删除注册表条目（先备份）
-#[allow(dead_code)] // P9: 注册表清理接入后使用
-pub fn delete_registry_entries(_entries: &[RegistryEntry]) -> u32 {
-    // P5 占位：需先实现 reg export 备份 + reg delete
-    0
-}
+pub use crate::registry_clean::{RegistryDeleteResult, RegistryEntry, RegistryScanResult};
 
 // ============ 图标缓存 ============
 

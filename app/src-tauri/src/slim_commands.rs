@@ -76,28 +76,40 @@ pub async fn delete_old_drivers(ids: Vec<String>) -> Result<u32, String> {
 
 #[tauri::command]
 pub fn open_driver_backup_dir() -> Result<(), String> {
-    Err("待实现".into())
+    slim::open_driver_backup_dir()
 }
 
 #[tauri::command]
-pub fn restore_all_driver_backups() -> Result<(), String> {
-    Err("待实现".into())
+pub async fn restore_all_driver_backups() -> Result<slim::DriverRestoreResult, String> {
+    tauri::async_runtime::spawn_blocking(slim::restore_all_driver_backups)
+        .await
+        .map_err(|e| format!("恢复驱动备份任务失败: {}", e))?
 }
 
 #[tauri::command]
-pub fn scan_registry_redundancy() -> Result<Vec<slim::RegistryEntry>, String> {
-    Ok(slim::scan_registry_redundancy())
+pub async fn scan_registry_redundancy() -> Result<slim::RegistryScanResult, String> {
+    tauri::async_runtime::spawn_blocking(crate::registry_clean::scan)
+        .await
+        .map_err(|e| format!("扫描任务失败: {}", e))
 }
 
+/// 删除注册表残留条目（删除前自动导出 .reg 备份到数据目录 reg_backups/）
 #[tauri::command]
-pub fn delete_registry_entries(entries: Vec<serde_json::Value>) -> Result<u32, String> {
-    let _ = entries;
-    Ok(0)
+pub async fn delete_registry_entries(entries: Vec<slim::RegistryEntry>) -> Result<slim::RegistryDeleteResult, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::registry_clean::delete_entries(&entries))
+        .await
+        .map_err(|e| format!("删除任务失败: {}", e))
 }
 
 #[tauri::command]
 pub fn open_registry_backup_dir() -> Result<(), String> {
-    Err("待实现".into())
+    let dir = crate::registry_clean::backup_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建注册表备份目录失败: {}", e))?;
+    std::process::Command::new("explorer")
+        .arg(&dir)
+        .spawn()
+        .map_err(|e| format!("打开注册表备份目录失败: {}", e))?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -178,14 +190,32 @@ pub async fn restart_explorer() -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn scan_context_menu() -> Result<serde_json::Value, String> {
-    Ok(serde_json::json!({ "entries": [], "phase": "P5" }))
+pub async fn scan_context_menu() -> Result<crate::context_menu::ContextMenuScanResult, String> {
+    tauri::async_runtime::spawn_blocking(crate::context_menu::scan)
+        .await
+        .map_err(|e| format!("扫描任务失败: {}", e))?
 }
 
+/// 删除右键菜单条目（删除前逐条 reg.exe export 备份）
 #[tauri::command]
-pub fn delete_context_menu_entries(ids: Vec<String>) -> Result<u32, String> {
-    let _ = ids;
-    Ok(0)
+pub async fn delete_context_menu_entries(ids: Vec<String>) -> Result<crate::context_menu::ContextMenuDeleteResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        // 前端只传 id（reg_root||reg_subpath），按约定拆分重建请求，不信任任意路径字段
+        let requests: Vec<crate::context_menu::ContextMenuDeleteRequest> = ids
+            .iter()
+            .filter_map(|id| {
+                let (root, sub) = id.split_once("||")?;
+                Some(crate::context_menu::ContextMenuDeleteRequest {
+                    id: id.clone(),
+                    reg_root: root.to_string(),
+                    reg_subpath: sub.to_string(),
+                })
+            })
+            .collect();
+        crate::context_menu::delete_entries(&requests)
+    })
+    .await
+    .map_err(|e| format!("删除任务失败: {}", e))
 }
 
 #[tauri::command]

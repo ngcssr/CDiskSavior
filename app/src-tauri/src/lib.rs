@@ -1,8 +1,11 @@
+mod appdata;
 mod bigfiles;
 mod cleaner;
+mod context_menu;
 mod growth;
 mod health;
 mod commands;
+mod registry_clean;
 mod relocate_commands;
 mod relocate;
 mod scan;

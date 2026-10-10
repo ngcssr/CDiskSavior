@@ -109,7 +109,7 @@ export const api_slim = {
   delete_old_drivers: (ids: string[]) => invoke<DeleteResult>("delete_old_drivers", { ids }),
   restore_all_driver_backups: () => invoke<DriverRestoreResult>("restore_all_driver_backups"),
   open_driver_backup_dir: () => invoke<void>("open_driver_backup_dir"),
-  scan_registry_redundancy: () => invoke<RegistryReport>("scan_registry_redundancy"),
+  scan_registry_redundancy: () => invoke<RegistryScanResult>("scan_registry_redundancy"),
   delete_registry_entries: (entries: RegistryEntry[]) => invoke<RegistryDeleteResult>("delete_registry_entries", { entries }),
   open_registry_backup_dir: () => invoke<void>("open_registry_backup_dir"),
   scan_shell_icons: () => invoke<ShellIconInfo[]>("scan_shell_icons"),
@@ -120,8 +120,8 @@ export const api_slim = {
   open_shell_icon_log: () => invoke<void>("open_shell_icon_log"),
   open_shell_icon_registry: (target: ShellIconTarget) => invoke<void>("open_shell_icon_registry", { target }),
   restart_explorer: () => invoke<void>("restart_explorer"),
-  scan_context_menu: () => invoke<ContextMenuReport>("scan_context_menu"),
-  delete_context_menu_entries: (ids: string[]) => invoke<DeleteResult>("delete_context_menu_entries", { ids }),
+  scan_context_menu: () => invoke<ContextMenuScanResult>("scan_context_menu"),
+  delete_context_menu_entries: (ids: string[]) => invoke<ContextMenuDeleteResult>("delete_context_menu_entries", { ids }),
   scan_ai_model_assets: () => invoke<AiModelEntry[]>("scan_ai_model_assets"),
   delete_ai_model: (id: string) => invoke<DeleteResult>("delete_ai_model", { id }),
 };
@@ -236,10 +236,19 @@ export type SlimStatus = {
 };
 export type DismResult = unknown;
 export type DriverEntry = { id: string; name: string; date: string; size: number; path: string };
-export type DriverRestoreResult = unknown;
-export type RegistryReport = unknown;
-export type RegistryEntry = unknown;
-export type RegistryDeleteResult = unknown;
+export type DriverRestoreResult = {
+  restoredCount: number; failedCount: number; details: string[];
+};
+// 注册表残留（HKCR\Applications 文件关联残留，铁证条件过滤）
+export type RegistryScanResult = {
+  entries: RegistryEntry[]; totalCount: number; scanDurationMs: number;
+};
+export type RegistryEntry = {
+  path: string; name: string; associatedPath: string; issue: string;
+};
+export type RegistryDeleteResult = {
+  backupPath: string; deletedCount: number; failedEntries: string[]; errors: string[];
+};
 // 外壳入口（此电脑/导航窗格第三方入口）
 export type ShellEntryKind = "myComputer" | "navigationPane";
 export type ShellIconTarget = {
@@ -255,6 +264,20 @@ export type ShellIconOperationResult = {
   success: boolean; message: string; backupPath: string | null; needsExplorerRefresh: boolean;
 };
 export type ShellIconReport = unknown;
+// 右键菜单
+export type ContextMenuScanResult = {
+  entries: ContextMenuEntry[]; invalidCount: number; scanDurationMs: number;
+};
+export type ContextMenuEntry = {
+  id: string; displayName: string; keyName: string; registryPath: string;
+  regRoot: string; regSubpath: string; scope: string;
+  iconPath: string | null; command: string | null; exePath: string | null;
+  exeExists: boolean; needsAdmin: boolean; isSystemProtected: boolean; riskLevel: string;
+};
+export type ContextMenuDeleteResult = {
+  deletedCount: number; failedCount: number;
+  details: { id: string; success: boolean; error: string | null }[];
+};
 export type ContextMenuReport = unknown;
 export type AiModelEntry = { id: string; name: string; path: string; size: number; lastModified: number };
 export type StartupItem = {

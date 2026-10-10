@@ -571,7 +571,7 @@ pub fn remove_shell_icon(
 
     let refresh_message = if mode == 2 {
         // 物理删除后刷新 Explorer，确保旧的 Shell Namespace 缓存立即失效。
-        match crate::slim::restart_explorer() {
+        match refresh_explorer() {
             Ok(()) => "节点已物理删除，已锁定父级防止复活并刷新 Explorer".to_string(),
             Err(error) => format!(
                 "节点已物理删除并锁定父级，但 Explorer 刷新失败，请手动刷新：{}",
@@ -763,7 +763,7 @@ pub fn record_shell_icon_operation(
 }
 
 fn shell_icon_log_path() -> PathBuf {
-    data_dir().join("logs").join("shell_icons.log")
+    crate::appdata::data_dir().join("logs").join("shell_icons.log")
 }
 
 /// 将目标键写入 Regedit 的 LastKey 后打开注册表编辑器，避免用户手动复制长路径。
@@ -811,6 +811,15 @@ fn regedit_root_name(regedit_config: &RegKey) -> String {
         })
         .filter(|root_name| !root_name.is_empty())
         .unwrap_or_else(|| "计算机".to_string())
+}
+
+/// 刷新 Explorer 外壳缓存：只发送 SHChangeNotify，不结束 explorer.exe，
+/// 避免 TranslucentTB 等任务栏扩展丢失注入状态。
+fn refresh_explorer() -> Result<(), String> {
+    unsafe {
+        SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, std::ptr::null(), std::ptr::null());
+    }
+    Ok(())
 }
 
 fn build_shell_icon_info_from_key(
@@ -1080,7 +1089,7 @@ fn remove_navigation_entry(
     if current_value != 0 {
         return Err("导航窗格固定状态未成功移除".to_string());
     }
-    let message = match crate::slim::restart_explorer() {
+    let message = match refresh_explorer() {
         Ok(()) => "导航窗格入口已移除，已刷新 Explorer".to_string(),
         Err(error) => format!("导航窗格入口已移除，但 Explorer 刷新失败，请手动刷新：{}", error),
     };
@@ -1110,7 +1119,7 @@ fn restore_navigation_entry(
     if current_value != pin_value {
         return Err("导航窗格固定状态恢复后核验不一致".to_string());
     }
-    let message = match crate::slim::restart_explorer() {
+    let message = match refresh_explorer() {
         Ok(()) => "导航窗格入口已恢复，已刷新 Explorer".to_string(),
         Err(error) => format!("导航窗格入口已恢复，但 Explorer 刷新失败，请手动刷新：{}", error),
     };
@@ -1283,15 +1292,7 @@ fn append_view_arg(args: &mut Vec<String>, view: &str) {
 }
 
 fn backup_dir() -> PathBuf {
-    data_dir().join("reg_backups").join("shell_icons")
-}
-
-/// 应用数据目录（与 Tauri app_data_dir 对齐：%APPDATA%\<identifier>）
-fn data_dir() -> PathBuf {
-    std::env::var_os("APPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("com.cdisksavior.app")
+    crate::appdata::data_dir().join("reg_backups").join("shell_icons")
 }
 
 fn find_latest_backup(target: &ShellIconTarget) -> Result<Option<ShellIconBackup>, String> {
