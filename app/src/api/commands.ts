@@ -40,7 +40,7 @@ export const api_insight = {
   create_disk_snapshot: (drive: string) => invoke<number>("create_disk_snapshot", { drive }),
   compare_disk_growth: (drive: string) => invoke<GrowthReport>("compare_disk_growth", { drive }),
   has_disk_snapshot: (drive: string) => invoke<boolean>("has_disk_snapshot", { drive }),
-  scan_large_files: () => invoke<LargeFileReport>("scan_large_files"),
+  scan_large_files: (root: string, minSize?: number) => invoke<LargeFileReport>("scan_large_files", { root, min_size: minSize }),
   cancel_large_file_scan: () => invoke<void>("cancel_large_file_scan"),
   scan_path_direct: (p: string) => invoke<TreeNode>("scan_path_direct", { path: p }),
 };
@@ -197,7 +197,13 @@ export type ScanCache = { scannedAt: number; root: string; tree: TreeNode };
 export type GrowthDirDetails = unknown;
 export type GrowthFileDetails = unknown;
 export type GrowthTree = unknown;
-export type LargeFileReport = unknown;
+export type LargeFileEntry = {
+  path: string; name: string; size: number; modified: number; dir: string;
+};
+export type LargeFileReport = {
+  entries: LargeFileEntry[]; totalFound: number; scannedFiles: number;
+  durationMs: number; cancelled: boolean; truncated: boolean;
+};
 export type CleanupScan = { items: CleanupItem[]; totalSize: number };
 export type CleanupReport = { freed: number; freeBefore: number; freeAfter: number; errors: string[]; skipped: string[] };
 export type CleanupStats = { totalFreed: number; totalRuns: number; lastAt: number };

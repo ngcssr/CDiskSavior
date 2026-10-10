@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
-import { api_insight } from "../api/commands";
-import { ChevronRight, RefreshCw, Folder, TrendingUp } from "lucide-react";
+import { api_insight, api_settings, type LargeFileReport } from "../api/commands";
+import { ChevronRight, RefreshCw, Folder, TrendingUp, FileWarning, FolderOpen, ExternalLink, X } from "lucide-react";
 
 type TreeNode = {
   name: string; path: string; size: number; isDir: boolean; hasChildren: boolean;
@@ -27,7 +27,7 @@ export default function Insight() {
   const [stack, setStack] = useState<TreeNode[]>([]); // 面包屑路径
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"tree" | "hotspot" | "growth">("tree");
+  const [tab, setTab] = useState<"tree" | "hotspot" | "growth" | "bigfile">("tree");
   // 热点
   const [hotspot, setHotspot] = useState<import("../api/commands").HotspotReport | null>(null);
   const [hotspotLoading, setHotspotLoading] = useState(false);
@@ -35,6 +35,10 @@ export default function Insight() {
   const [growth, setGrowth] = useState<import("../api/commands").GrowthReport | null>(null);
   const [growthLoading, setGrowthLoading] = useState(false);
   const [hasBaseline, setHasBaseline] = useState(false);
+  // 大文件
+  const [bigfile, setBigfile] = useState<LargeFileReport | null>(null);
+  const [bigfileLoading, setBigfileLoading] = useState(false);
+  const [bigfileMin, setBigfileMin] = useState(100); // MB
 
   const scan = useCallback(async (path: string, pushToStack: boolean) => {
     setLoading(true);
@@ -100,8 +104,23 @@ export default function Insight() {
     }
   };
 
-  const drillInto = (node: TreeNode) => {
-    if (!node.isDir) return;
+  const runBigfile = async () => {
+    setBigfileLoading(true);
+    setError(null);
+    try {
+      setBigfile(await api_insight.scan_large_files("C:\\", bigfileMin * 1024 * 1024));
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setBigfileLoading(false);
+    }
+  };
+
+  const cancelBigfile = () => {
+    api_insight.cancel_large_file_scan();
+  };
+
+  const drillInto = (node: TreeNode) => {    if (!node.isDir) return;
     scan(node.path, true);
   };
 
@@ -142,13 +161,14 @@ export default function Insight() {
 
         {/* 视图切换 */}
         <div className="flex gap-1 rounded-lg bg-[var(--color-surface-hover)] p-0.5">
-          {([["tree", "目录树"], ["hotspot", "热点"], ["growth", "增长"]] as const).map(([id, label]) => (
+          {([["tree", "目录树"], ["hotspot", "热点"], ["growth", "增长"], ["bigfile", "大文件"]] as const).map(([id, label]) => (
             <button
               key={id}
               onClick={() => {
                 setTab(id);
                 if (id === "hotspot" && !hotspot && !hotspotLoading) runHotspot();
                 if (id === "growth" && !growth && hasBaseline && !growthLoading) runGrowth();
+                if (id === "bigfile" && !bigfile && !bigfileLoading) runBigfile();
               }}
               className="rounded-md px-3 py-1 text-xs font-medium transition-all"
               style={{
@@ -331,6 +351,97 @@ export default function Insight() {
             ) : (
               <div className="p-8 text-center">
                 <button onClick={runGrowth} className="btn btn-primary">开始对比</button>
+              </div>
+            )}
+          </div>
+        )}
+        {/* ===== 大文件 tab ===== */}
+        {tab === "bigfile" && (
+          <div>
+            <div className="mb-3 flex items-center justify-between rounded-xl bg-[var(--color-surface-hover)] px-4 py-2 text-sm">
+              <span className="flex items-center gap-2">
+                阈值
+                <select
+                  value={bigfileMin}
+                  onChange={(e) => setBigfileMin(Number(e.target.value))}
+                  disabled={bigfileLoading}
+                  className="rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] px-2 py-0.5 text-xs"
+                >
+                  {[10, 50, 100, 500, 1024].map((mb) => (
+                    <option key={mb} value={mb}>{mb >= 1024 ? "1 GB" : `${mb} MB`}</option>
+                  ))}
+                </select>
+                {bigfile && !bigfileLoading && (
+                  <span className="text-xs text-[var(--color-text-secondary)]">
+                    命中 {bigfile.totalFound.toLocaleString()} 个 / 扫描 {bigfile.scannedFiles.toLocaleString()} 个文件 · {(bigfile.durationMs / 1000).toFixed(1)}s
+                    {bigfile.truncated && "（仅显示 Top 200）"}
+                    {bigfile.cancelled && "（已取消）"}
+                  </span>
+                )}
+              </span>
+              <div className="flex gap-2">
+                {bigfileLoading ? (
+                  <button onClick={cancelBigfile} className="btn flex items-center gap-1 text-xs">
+                    <X size={12} /> 取消扫描
+                  </button>
+                ) : (
+                  <button onClick={runBigfile} className="btn btn-primary flex items-center gap-1 text-xs">
+                    <RefreshCw size={12} /> {bigfile ? "重新扫描" : "开始扫描"}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {bigfileLoading && (
+              <div className="pulse p-8 text-center text-sm text-[var(--color-text-secondary)]">
+                正在扫描 C:\ 大文件（{bigfileMin >= 1024 ? "1 GB" : `${bigfileMin} MB`} 以上）…
+              </div>
+            )}
+
+            {bigfile && !bigfileLoading && bigfile.entries.length === 0 && (
+              <div className="p-8 text-center text-sm text-[var(--color-text-secondary)]">
+                未找到 {bigfileMin >= 1024 ? "1 GB" : `${bigfileMin} MB`} 以上的文件
+              </div>
+            )}
+
+            {bigfile && !bigfileLoading && bigfile.entries.length > 0 && (
+              <div className="space-y-1">
+                {bigfile.entries.map((e) => {
+                  const maxSize = bigfile.entries[0]?.size ?? 1;
+                  const ratio = e.size / maxSize;
+                  return (
+                    <div key={e.path} className="group rounded-lg px-3 py-2 hover:bg-[var(--color-surface-hover)]">
+                      <div className="flex items-center gap-3">
+                        <FileWarning size={14} className="shrink-0 text-[var(--color-caution)]" />
+                        <div className="w-56 truncate text-sm font-medium" title={e.path}>{e.name}</div>
+                        <div className="relative h-4 flex-1 overflow-hidden rounded bg-[var(--color-surface-hover)]">
+                          <div className="bar-fill h-full rounded" style={{ width: `${Math.max(ratio * 100, 2)}%`, background: "var(--color-caution)" }} />
+                        </div>
+                        <span className="font-num w-20 text-right text-xs text-[var(--color-text-secondary)]">{formatSize(e.size)}</span>
+                        <div className="flex shrink-0 gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                          <button
+                            title="打开所在目录"
+                            onClick={() => api_settings.reveal_in_folder(e.path).catch(() => {})}
+                            className="rounded p-1 hover:bg-[var(--color-surface)]"
+                          >
+                            <FolderOpen size={13} />
+                          </button>
+                          <button
+                            title="打开文件"
+                            onClick={() => api_settings.open_file(e.path).catch(() => {})}
+                            className="rounded p-1 hover:bg-[var(--color-surface)]"
+                          >
+                            <ExternalLink size={13} />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="mt-0.5 flex justify-between pl-6 text-[10px] text-[var(--color-text-dim)]">
+                        <span className="truncate font-mono">{e.dir}</span>
+                        <span className="shrink-0">{e.modified > 0 ? new Date(e.modified).toLocaleDateString("zh-CN") : ""}</span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
