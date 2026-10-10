@@ -17,18 +17,12 @@ pub fn memory_report() -> Result<serde_json::Value, String> {
     Ok(crate::scan::memory_report())
 }
 
-/// 磁盘健康（物理盘 SMART 健康状态）
+/// 磁盘健康（物理盘 SMART 健康状态；映射表统一命令名 get_disk_health）
 #[tauri::command]
-pub async fn query_disk_health() -> Result<Vec<crate::health::DiskHealth>, String> {
+pub async fn get_disk_health() -> Result<Vec<crate::health::DiskHealth>, String> {
     tauri::async_runtime::spawn_blocking(crate::health::query_disk_health)
         .await
         .map_err(|e| format!("查询失败: {}", e))?
-}
-
-/// 磁盘健康（映射表统一命令名 get_disk_health；与 query_disk_health 同实现）
-#[tauri::command]
-pub async fn get_disk_health() -> Result<Vec<crate::health::DiskHealth>, String> {
-    query_disk_health().await
 }
 
 /// 系统健康评分（100 = 磁盘 40 + 休眠 30 + 垃圾 30）
