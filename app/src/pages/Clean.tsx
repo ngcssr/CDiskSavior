@@ -47,10 +47,10 @@ export default function Clean() {
         api_clean.list_cleanup_items(),
         api_clean.get_cleanup_stats(),
         api_clean.scan_orphan_dirs(),
-      ]) as any;
-      setItems(scan?.items ?? []);
+      ]);
+      setItems(scan.items);
       setStats(st);
-      setOrphans(orph?.confirmed ?? []);
+      setOrphans(orph.confirmed);
     } catch (e: any) {
       setError(e?.message ?? String(e));
     } finally {
@@ -72,8 +72,8 @@ export default function Clean() {
     setCleaning(true);
     setResult(null);
     try {
-      const r = await api_clean.run_cleanup(Array.from(selected)) as any;
-      setResult({ freed: r.freed, errors: r.errors ?? [], skipped: r.skipped ?? [] });
+      const r = await api_clean.run_cleanup(Array.from(selected));
+      setResult({ freed: r.freed, errors: r.errors, skipped: r.skipped });
       await refresh();
     } catch (e: any) {
       setError(e?.message ?? String(e));
@@ -85,8 +85,8 @@ export default function Clean() {
   const cleanOrphans = async () => {
     setCleaning(true);
     try {
-      const r = await api_clean.clean_orphan_dirs(orphans.map((o) => o.path)) as any;
-      setResult({ freed: r.freed, errors: r.errors ?? [], skipped: [] });
+      const r = await api_clean.clean_orphan_dirs(orphans.map((o) => o.path));
+      setResult({ freed: r.freed, errors: r.errors, skipped: [] });
       await refresh();
     } catch (e: any) {
       setError(e?.message ?? String(e));

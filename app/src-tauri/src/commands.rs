@@ -26,15 +26,20 @@ pub fn pagefile_check() -> Result<serde_json::Value, String> {
 // ============ M2 磁盘透视（P3 真实实现） ============
 
 /// 扫描驱动器（jwalk 并行目录树 → TreeNode）
+/// async + spawn_blocking：全盘扫描可能数秒，不阻塞主线程
 #[tauri::command]
-pub fn scan_drive(root: String) -> Result<crate::scan::TreeNode, String> {
-    crate::scan::scan_directory(&root)
+pub async fn scan_drive(root: String) -> Result<crate::scan::TreeNode, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::scan::scan_directory(&root))
+        .await
+        .map_err(|e| format!("扫描任务失败: {}", e))?
 }
 
 /// 扫描指定目录
 #[tauri::command]
-pub fn scan_dir(path: String) -> Result<crate::scan::TreeNode, String> {
-    crate::scan::scan_directory(&path)
+pub async fn scan_dir(path: String) -> Result<crate::scan::TreeNode, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::scan::scan_directory(&path))
+        .await
+        .map_err(|e| format!("扫描任务失败: {}", e))?
 }
 
 #[tauri::command]
@@ -45,16 +50,20 @@ pub fn load_scan_cache(root: String) -> Option<serde_json::Value> {
 
 // ============ M3 一键清理（P4 真实实现） ============
 
-/// 清理项扫描（返回当前可清理的项 + 大小）
+/// 清理项扫描（返回当前可清理的项 + 大小）——async：扫描多个目录可能较慢
 #[tauri::command]
-pub fn list_cleanup_items() -> Result<crate::cleaner::CleanupScan, String> {
-    Ok(crate::cleaner::items::list_items())
+pub async fn list_cleanup_items() -> Result<crate::cleaner::CleanupScan, String> {
+    tauri::async_runtime::spawn_blocking(crate::cleaner::items::list_items)
+        .await
+        .map_err(|e| format!("扫描失败: {}", e))
 }
 
-/// 执行清理（id 驱动 + 当场重扫 + R1 四层护栏）
+/// 执行清理（id 驱动 + 当场重扫 + R1 四层护栏）——async：删除操作可能较慢
 #[tauri::command]
-pub fn run_cleanup(app: tauri::AppHandle, ids: Vec<String>) -> Result<crate::cleaner::CleanupReport, String> {
-    let report = crate::cleaner::items::run(&ids);
+pub async fn run_cleanup(app: tauri::AppHandle, ids: Vec<String>) -> Result<crate::cleaner::CleanupReport, String> {
+    let report = tauri::async_runtime::spawn_blocking(move || crate::cleaner::items::run(&ids))
+        .await
+        .map_err(|e| format!("清理失败: {}", e))?;
     // 记账：用实际磁盘变化
     crate::cleaner::stats::record(&app, report.free_after.saturating_sub(report.free_before));
     Ok(report)
@@ -66,16 +75,20 @@ pub fn get_cleanup_stats(app: tauri::AppHandle) -> crate::cleaner::stats::Cleanu
     crate::cleaner::stats::load(&app)
 }
 
-/// 孤儿目录扫描（含 C1 互斥：reparse 前置过滤）
+/// 孤儿目录扫描（含 C1 互斥：reparse 前置过滤）——async：遍历安装根较慢
 #[tauri::command]
-pub fn scan_orphan_dirs() -> Result<crate::cleaner::OrphanScan, String> {
-    Ok(crate::cleaner::orphans::scan_orphans())
+pub async fn scan_orphan_dirs() -> Result<crate::cleaner::OrphanScan, String> {
+    tauri::async_runtime::spawn_blocking(crate::cleaner::orphans::scan_orphans)
+        .await
+        .map_err(|e| format!("扫描失败: {}", e))
 }
 
-/// 孤儿目录清理（当场重扫白名单 + canonicalize 校验）
+/// 孤儿目录清理（当场重扫白名单 + canonicalize 校验）——async：删除+重扫
 #[tauri::command]
-pub fn clean_orphan_dirs(paths: Vec<String>) -> Result<crate::cleaner::ResidueReport, String> {
-    Ok(crate::cleaner::orphans::clean_orphans(&paths))
+pub async fn clean_orphan_dirs(paths: Vec<String>) -> Result<crate::cleaner::ResidueReport, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::cleaner::orphans::clean_orphans(&paths))
+        .await
+        .map_err(|e| format!("清理失败: {}", e))
 }
 
 // ============ M4 空间腾挪 ============
@@ -84,8 +97,10 @@ pub fn clean_orphan_dirs(paths: Vec<String>) -> Result<crate::cleaner::ResidueRe
 // ============ M6 启动与内存（P6 真实实现） ============
 
 #[tauri::command]
-pub fn list_startup_items() -> Result<Vec<crate::tune::StartupItem>, String> {
-    Ok(crate::tune::list_items())
+pub async fn list_startup_items() -> Result<Vec<crate::tune::StartupItem>, String> {
+    tauri::async_runtime::spawn_blocking(crate::tune::list_items)
+        .await
+        .map_err(|e| format!("枚举失败: {}", e))
 }
 
 #[tauri::command]
@@ -95,33 +110,42 @@ pub fn set_startup_enabled(id: String, enabled: bool) -> Result<(), String> {
 
 // ============ M7 高级维护（P7 实现） ============
 
-/// 系统级清理分析（Windows\Temp + SoftwareDistribution 当前大小）
+/// 系统级清理分析（Windows\Temp + SoftwareDistribution 当前大小）——async：遍历系统目录较慢
 #[tauri::command]
-pub fn analyze_system_clean() -> Result<serde_json::Value, String> {
-    let win = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
-    let temp_path = format!("{}\\Temp", win);
-    let sdu_path = format!("{}\\SoftwareDistribution\\Download", win);
+pub async fn analyze_system_clean() -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let win = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
+        let temp_path = format!("{}\\Temp", win);
+        let sdu_path = format!("{}\\SoftwareDistribution\\Download", win);
 
-    let temp_size = dir_size_str(&temp_path);
-    let sdu_size = dir_size_str(&sdu_path);
+        let temp_size = dir_size_str(&temp_path);
+        let sdu_size = dir_size_str(&sdu_path);
 
-    Ok(serde_json::json!({
-        "windowsTemp": { "path": temp_path, "size": temp_size },
-        "updateDownload": { "path": sdu_path, "size": sdu_size },
-        "totalSize": temp_size + sdu_size,
-    }))
+        serde_json::json!({
+            "windowsTemp": { "path": temp_path, "size": temp_size },
+            "updateDownload": { "path": sdu_path, "size": sdu_size },
+            "totalSize": temp_size + sdu_size,
+        })
+    })
+    .await
+    .map_err(|e| format!("分析失败: {}", e))
 }
 
 #[tauri::command]
-pub fn run_deep_analyze() -> Result<serde_json::Value, String> {
-    // 委托给 M3 的 list_cleanup_items
-    let scan = crate::cleaner::items::list_items();
-    Ok(serde_json::json!({ "items": scan.items, "totalSize": scan.total_size }))
+pub async fn run_deep_analyze() -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let scan = crate::cleaner::items::list_items();
+        serde_json::json!({ "items": scan.items, "totalSize": scan.total_size })
+    })
+    .await
+    .map_err(|e| format!("分析失败: {}", e))
 }
 
 #[tauri::command]
-pub fn run_deep_clean(app: tauri::AppHandle, ids: Vec<String>) -> Result<crate::cleaner::CleanupReport, String> {
-    let report = crate::cleaner::items::run(&ids);
+pub async fn run_deep_clean(app: tauri::AppHandle, ids: Vec<String>) -> Result<crate::cleaner::CleanupReport, String> {
+    let report = tauri::async_runtime::spawn_blocking(move || crate::cleaner::items::run(&ids))
+        .await
+        .map_err(|e| format!("清理失败: {}", e))?;
     crate::cleaner::stats::record(&app, report.free_after.saturating_sub(report.free_before));
     Ok(report)
 }

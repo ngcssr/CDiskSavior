@@ -18,7 +18,7 @@ export default function Settings() {
           api_settings.get_data_directory(),
           api_settings.verify_integrity(),
           api_settings.scan_service_available(),
-        ]) as any;
+        ]);
         setIsAdmin(admin);
         setDataDir(dir);
         setIntegrity(integ);

@@ -99,7 +99,7 @@ export const api_slim = {
   open_virtual_memory_settings: () => invoke<void>("open_virtual_memory_settings"),
   open_storage_settings: () => invoke<void>("open_storage_settings"),
   open_disk_cleanup: () => invoke<void>("open_disk_cleanup"),
-  scan_old_drivers: () => invoke<DriverReport>("scan_old_drivers"),
+  scan_old_drivers: () => invoke<DriverEntry[]>("scan_old_drivers"),
   delete_old_drivers: (ids: string[]) => invoke<DeleteResult>("delete_old_drivers", { ids }),
   restore_all_driver_backups: () => invoke<DriverRestoreResult>("restore_all_driver_backups"),
   open_driver_backup_dir: () => invoke<void>("open_driver_backup_dir"),
@@ -116,7 +116,7 @@ export const api_slim = {
   restart_explorer: () => invoke<void>("restart_explorer"),
   scan_context_menu: () => invoke<ContextMenuReport>("scan_context_menu"),
   delete_context_menu_entries: (ids: string[]) => invoke<DeleteResult>("delete_context_menu_entries", { ids }),
-  scan_ai_model_assets: () => invoke<AiModelReport>("scan_ai_model_assets"),
+  scan_ai_model_assets: () => invoke<AiModelEntry[]>("scan_ai_model_assets"),
   delete_ai_model: (id: string) => invoke<DeleteResult>("delete_ai_model", { id }),
 };
 
@@ -129,8 +129,8 @@ export const api_tune = {
 
 // ============ M7 高级维护（5） ============
 export const api_advanced = {
-  analyze_system_clean: () => invoke<SystemAnalyzeReport>("analyze_system_clean"),
-  run_deep_analyze: () => invoke<DeepAnalyzeReport>("run_deep_analyze"),
+  analyze_system_clean: () => invoke<{ windowsTemp: { path: string; size: number }; updateDownload: { path: string; size: number }; totalSize: number }>("analyze_system_clean"),
+  run_deep_analyze: () => invoke<{ items: unknown[]; totalSize: number }>("run_deep_analyze"),
   run_deep_clean: () => invoke<DeepCleanReport>("run_deep_clean"),
   run_deep_clean_system: () => invoke<SystemCleanReport>("run_deep_clean_system"),
   collect_rules: (includeDrives: boolean) => invoke<CollectResult>("collect_rules", { include_drives: includeDrives }),
@@ -179,7 +179,10 @@ export type DiskInfo = unknown;
 export type DiskHealth = unknown;
 export type HealthScore = unknown;
 export type SystemInfo = unknown;
-export type MemoryReport = unknown;
+export type MemoryReport = {
+  overview: { total: number; available: number; usedPercent: number; swapTotal?: number; swapAvailable?: number };
+  processes: unknown[];
+};
 export type PagefileCheck = unknown;
 export type TreeNode = {
   name: string; path: string; size: number; isDir: boolean; hasChildren: boolean;
@@ -193,10 +196,10 @@ export type GrowthFileDetails = unknown;
 export type GrowthTree = unknown;
 export type HotspotReport = unknown;
 export type LargeFileReport = unknown;
-export type CleanupScan = unknown;
-export type CleanupReport = { freed: number; free_before: number; free_after: number };
+export type CleanupScan = { items: CleanupItem[]; totalSize: number };
+export type CleanupReport = { freed: number; freeBefore: number; freeAfter: number; errors: string[]; skipped: string[] };
 export type CleanupStats = { totalFreed: number; totalRuns: number; lastAt: number };
-export type OrphanScan = { confirmed: { path: string; app_name: string; size: number; note?: string }[] };
+export type OrphanScan = { confirmed: OrphanEntry[] };
 export type ResidueReport = { freed: number; errors: string[] };
 export type JunkReport = unknown;
 export type DeepJunkReport = unknown;
@@ -219,16 +222,20 @@ export type RelocateConfig = {
   scanSources: { enabled: boolean; label: string; path: string; targetSubdir: string }[];
   legacyImported: boolean;
 };
-export type SlimStatus = unknown;
+export type SlimStatus = {
+  hibernationEnabled: boolean; winsxsSize: number | null; searchIndexRunning: boolean;
+  oldDriverCount: number; oldDriverTotalSize: number;
+  registryRedundantCount: number; aiModelCount: number; aiModelTotalSize: number;
+};
 export type DismResult = unknown;
-export type DriverReport = unknown;
+export type DriverEntry = { id: string; name: string; date: string; size: number; path: string };
 export type DriverRestoreResult = unknown;
 export type RegistryReport = unknown;
 export type RegistryEntry = unknown;
 export type RegistryDeleteResult = unknown;
 export type ShellIconReport = unknown;
 export type ContextMenuReport = unknown;
-export type AiModelReport = unknown;
+export type AiModelEntry = { id: string; name: string; path: string; size: number; lastModified: number };
 export type StartupItem = {
   id: string; name: string; command: string; location: string;
   enabled: boolean; needsAdmin: boolean; memMb?: number;
@@ -243,3 +250,9 @@ export type StorageLocationInfo = unknown;
 export type WriteDiagnostic = unknown;
 export type ClearableItem = unknown;
 export type IntegrityReport = unknown;
+
+export type CleanupItem = {
+  id: string; name: string; description: string; size: number;
+  path: string; category: string; safety: string;
+};
+export type OrphanEntry = { path: string; appName: string; size: number; note?: string };

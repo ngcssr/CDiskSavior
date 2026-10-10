@@ -2,9 +2,12 @@
 
 use crate::slim;
 
+/// 获取状态——async：check_hibernation 调 powercfg + get_winsxs_size 遍历
 #[tauri::command]
-pub fn get_system_slim_status() -> Result<slim::SlimStatus, String> {
-    Ok(slim::get_status())
+pub async fn get_system_slim_status() -> Result<slim::SlimStatus, String> {
+    tauri::async_runtime::spawn_blocking(slim::get_status)
+        .await
+        .map_err(|e| format!("获取状态失败: {}", e))
 }
 
 #[tauri::command]
@@ -48,8 +51,10 @@ pub fn open_disk_cleanup() -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn scan_old_drivers() -> Result<Vec<slim::DriverEntry>, String> {
-    Ok(slim::scan_old_drivers())
+pub async fn scan_old_drivers() -> Result<Vec<slim::DriverEntry>, String> {
+    tauri::async_runtime::spawn_blocking(slim::scan_old_drivers)
+        .await
+        .map_err(|e| format!("扫描失败: {}", e))
 }
 
 #[tauri::command]
@@ -125,13 +130,18 @@ pub fn delete_context_menu_entries(ids: Vec<String>) -> Result<u32, String> {
 }
 
 #[tauri::command]
-pub fn scan_ai_model_assets() -> Result<Vec<slim::AiModelEntry>, String> {
-    Ok(slim::scan_ai_model_assets())
+pub async fn scan_ai_model_assets() -> Result<Vec<slim::AiModelEntry>, String> {
+    tauri::async_runtime::spawn_blocking(slim::scan_ai_model_assets)
+        .await
+        .map_err(|e| format!("扫描失败: {}", e))
 }
 
 #[tauri::command]
-pub fn delete_ai_model(id: String) -> Result<u64, String> {
-    // 先扫描获取完整列表，再按 id 删除
-    let models = slim::scan_ai_model_assets();
-    slim::delete_ai_model(&id, &models)
+pub async fn delete_ai_model(id: String) -> Result<u64, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let models = slim::scan_ai_model_assets();
+        slim::delete_ai_model(&id, &models)
+    })
+    .await
+    .map_err(|e| format!("删除失败: {}", e))?
 }

@@ -27,7 +27,7 @@ export default function Advanced() {
     setError(null);
     setResult(null);
     try {
-      const r = await api_advanced.analyze_system_clean() as any;
+      const r = await api_advanced.analyze_system_clean();
       setAnalysis(r);
     } catch (e: any) {
       setError(e?.message ?? String(e));
@@ -55,7 +55,7 @@ export default function Advanced() {
   const deepAnalyze = async () => {
     setScanning(true);
     try {
-      const r = await api_advanced.run_deep_analyze() as any;
+      const r = await api_advanced.run_deep_analyze();
       setResult(`深度分析完成：${r?.items?.length ?? 0} 个可清理项，共 ${fmt(r?.totalSize ?? 0)}`);
     } catch (e: any) {
       setError(e?.message ?? String(e));

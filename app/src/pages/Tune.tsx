@@ -2,10 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { api_tune } from "../api/commands";
 import { Rocket, ToggleLeft, ToggleRight, Shield } from "lucide-react";
 
-type StartupItem = {
-  id: string; name: string; command: string; location: string;
-  enabled: boolean; needsAdmin: boolean; advice: string; reason: string;
-};
+import type { StartupItem } from "../api/commands";
 
 const ADVICE_STYLE: Record<string, { color: string; label: string }> = {
   disable: { color: "var(--color-caution)", label: "建议禁用" },
@@ -21,7 +18,7 @@ export default function Tune() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const list = await api_tune.list_startup_items() as any as StartupItem[];
+      const list = await api_tune.list_startup_items();
       setItems(list ?? []);
     } catch (e: any) {
       setError(e?.message ?? String(e));

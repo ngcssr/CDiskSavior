@@ -26,10 +26,10 @@ export default function Slim() {
         api_slim.get_system_slim_status(),
         api_slim.scan_old_drivers(),
         api_slim.scan_ai_model_assets(),
-      ]) as any;
+      ]);
       setStatus(st);
-      setDrivers(drv ?? []);
-      setAiModels(ai ?? []);
+      setDrivers(drv);
+      setAiModels(ai);
     } catch (e: any) {
       setError(e?.message ?? String(e));
     }

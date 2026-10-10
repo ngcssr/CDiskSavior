@@ -22,12 +22,15 @@ struct TaskHandle {
     control: Arc<AtomicU8>,
 }
 
-/// 扫描可迁移目标
+/// 扫描可迁移目标——async：遍历 AppData 可能较慢
 #[tauri::command]
-pub fn scan_relocate_targets(app: AppHandle) -> Result<Vec<RelocateTarget>, String> {
-    let cfg = config::load_config(&app);
-    let targets = scanner::scan_large_folders(&cfg.scan_sources, None);
-    Ok(targets)
+pub async fn scan_relocate_targets(app: AppHandle) -> Result<Vec<RelocateTarget>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let cfg = config::load_config(&app);
+        scanner::scan_large_folders(&cfg.scan_sources, None)
+    })
+    .await
+    .map_err(|e| format!("扫描失败: {}", e))
 }
 
 /// 检查占用进程（返回给前端展示 + 用户确认）

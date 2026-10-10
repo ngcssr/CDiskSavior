@@ -25,7 +25,7 @@ export default function Dashboard() {
           api_dashboard.memory_report(),
         ]);
         setDrives(d);
-        setMem((m as any).overview);
+        setMem(m.overview);
       } catch (e: any) {
         setError(e?.message ?? String(e));
       } finally {
