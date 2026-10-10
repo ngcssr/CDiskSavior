@@ -3,6 +3,7 @@ import { api_clean } from "../api/commands";
 import { listen } from "@tauri-apps/api/event";
 import {
   Trash2, RefreshCw, AlertTriangle, FolderX, Layers, X, MessageSquare,
+  ShieldCheck, Power, PackageX, EyeOff, Eye, ExternalLink, Bomb,
 } from "lucide-react";
 
 type CleanupItem = {
@@ -57,6 +58,14 @@ export default function Clean() {
   const [deepScanning, setDeepScanning] = useState(false);
   const [deepProgress, setDeepProgress] = useState<{ category: string; done: number; total: number } | null>(null);
   const [deepSelected, setDeepSelected] = useState<Set<string>>(new Set());
+  // 软件体检状态（Q4）
+  const [bloat, setBloat] = useState<import("../api/commands").BloatwareScan | null>(null);
+  const [bloatLoading, setBloatLoading] = useState(false);
+  const [includeAll, setIncludeAll] = useState(false);
+  const [bloatBusy, setBloatBusy] = useState<string | null>(null);
+  const [forcePlan, setForcePlan] = useState<import("../api/commands").ForcePlan | null>(null);
+  const [residue, setResidue] = useState<import("../api/commands").ResidueScanReport | null>(null);
+  const [residueTarget, setResidueTarget] = useState<import("../api/commands").BloatwareEntry | null>(null);
   // 社交缓存状态
   const [social, setSocial] = useState<import("../api/commands").SocialScan | null>(null);
   const [socialDeleting, setSocialDeleting] = useState<string | null>(null);
@@ -109,6 +118,77 @@ export default function Clean() {
       group.forEach((i) => (allIn ? n.delete(i.id) : n.add(i.id)));
       return n;
     });
+  };
+
+  // ===== 软件体检（Q4）操作 =====
+  const runBloatScan = useCallback(async (all: boolean) => {
+    setBloatLoading(true);
+    setError(null);
+    try {
+      setBloat(await api_clean.scan_bloatware(all));
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setBloatLoading(false);
+    }
+  }, []);
+
+  const bloatAction = async (_id: string, fn: () => Promise<unknown>, label: string, reload = true) => {
+    setBloatBusy(label);
+    setError(null);
+    try {
+      await fn();
+      setResult({ freed: 0, errors: [], skipped: [] });
+      if (reload) await runBloatScan(includeAll);
+    } catch (e: any) {
+      setError(`${label}：${e?.message ?? e}`);
+    } finally {
+      setBloatBusy(null);
+    }
+  };
+
+  const previewForce = async (id: string) => {
+    setBloatBusy("强力卸载预览");
+    setError(null);
+    try {
+      setForcePlan(await api_clean.bloatware_force_preview(id));
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setBloatBusy(null);
+    }
+  };
+
+  const scanResidueFor = async (e: import("../api/commands").BloatwareEntry) => {
+    setBloatBusy("扫描残留");
+    setResidueTarget(e);
+    setError(null);
+    try {
+      setResidue(await api_clean.scan_residue(e.name, e.publisher, e.installLocation));
+    } catch (err: any) {
+      setError(err?.message ?? String(err));
+    } finally {
+      setBloatBusy(null);
+    }
+  };
+
+  const cleanResidue = async () => {
+    if (!residueTarget || !residue) return;
+    setBloatBusy("清理残留");
+    setError(null);
+    try {
+      const r = await api_clean.clean_residue(
+        residueTarget.name, residueTarget.publisher, residueTarget.installLocation,
+        residue.dirs.map((d) => d.path), residue.regKeys
+      );
+      setResult({ freed: r.freed, errors: r.errors, skipped: [] });
+      setResidue(null);
+      setResidueTarget(null);
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setBloatBusy(null);
+    }
   };
 
   // ===== 深度扫描状态与操作 =====
@@ -561,6 +641,205 @@ export default function Clean() {
             </div>
           </section>
         )}
+        {/* ===== 软件体检（Q4：客观行为陈述，不定性） ===== */}
+        <section className="mb-6">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text-secondary)]">
+              <PackageX size={14} /> 软件体检
+              {bloat && <span className="text-xs font-normal">（重点关注 {bloat.shownCount}）</span>}
+            </h2>
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-1 text-xs text-[var(--color-text-secondary)]">
+                <input type="checkbox" checked={includeAll} onChange={(e) => setIncludeAll(e.target.checked)} />
+                列出全部
+              </label>
+              <button
+                onClick={() => runBloatScan(includeAll)}
+                disabled={bloatLoading || bloatBusy !== null}
+                className="flex items-center gap-1.5 rounded-lg bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+              >
+                <RefreshCw size={14} className={bloatLoading ? "animate-spin" : ""} />
+                {bloatLoading ? "体检中…" : bloat ? "重新体检" : "开始体检"}
+              </button>
+            </div>
+          </div>
+
+          {bloat === null && !bloatLoading && (
+            <div className="py-2 text-xs text-[var(--color-text-secondary)]">
+              只陈述客观行为（开机自启 / 后台常驻 / 占用较大），不对任何软件定性；卸载一律调起软件自带官方卸载程序
+            </div>
+          )}
+
+          {bloat && bloat.browserNotes.length > 0 && (
+            <div className="mb-3 rounded-xl border border-[var(--color-caution)]/30 bg-[var(--color-caution)]/5 px-4 py-2 text-xs text-[var(--color-caution)]">
+              {bloat.browserNotes.map((n, i) => <div key={i}>{n}</div>)}
+            </div>
+          )}
+
+          {bloat && bloat.entries.length === 0 && (
+            <div className="py-4 text-center text-sm text-[var(--color-text-secondary)]">未发现需要关注的软件行为</div>
+          )}
+
+          {bloat && bloat.entries.length > 0 && (
+            <div className="max-h-96 space-y-1 overflow-y-auto">
+              {bloat.entries.map((e) => (
+                <div key={e.id}
+                  className={`flex items-start gap-3 rounded-lg border px-3 py-2 ${
+                    e.dismissed
+                      ? "border-[var(--color-line)] bg-[var(--color-surface-hover)] opacity-60"
+                      : "border-[var(--color-line)] bg-[var(--color-surface)]"
+                  }`}>
+                  <div className="mt-0.5 h-8 w-8 shrink-0 overflow-hidden rounded-lg bg-[var(--color-surface-hover)]">
+                    {e.icon ? <img src={e.icon} alt="" className="h-full w-full" /> : null}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5 text-sm">
+                      <span className="truncate font-medium">{e.name}</span>
+                      {e.security && (
+                        <span className="chip" style={{ color: "var(--color-caution)" }}><ShieldCheck size={10} className="mr-0.5 inline" />安全软件</span>
+                      )}
+                      {e.trusted && <span className="chip" style={{ color: "var(--color-text-dim)" }}>常用/系统</span>}
+                      {e.tags.map((t) => (
+                        <span key={t} className="chip" style={{ color: "var(--color-primary)" }}>{t}</span>
+                      ))}
+                      {e.dismissed && <span className="chip" style={{ color: "var(--color-text-dim)" }}>已忽略</span>}
+                    </div>
+                    <div className="mt-0.5 text-xs text-[var(--color-text-secondary)]">
+                      {e.publisher || "未知发行商"}
+                      {e.sizeMb != null && e.sizeMb > 0 && ` · ${e.sizeMb >= 1024 ? `${(e.sizeMb / 1024).toFixed(1)} GB` : `${e.sizeMb.toFixed(0)} MB`}`}
+                      {e.version && ` · v${e.version}`}
+                    </div>
+                    {e.behaviors.map((b, i) => (
+                      <div key={i} className="text-xs text-[var(--color-text-secondary)]">{b}</div>
+                    ))}
+                    <div className="mt-0.5 text-[11px] text-[var(--color-text-dim)]">{e.suggestion}</div>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-1" style={{ maxWidth: 200 }}>
+                    {e.uninstallable && (
+                      <button
+                        title="一键卸载（停后台+官方卸载器静默，需 UAC）"
+                        disabled={bloatBusy !== null}
+                        onClick={() => bloatAction(e.id, () => api_clean.uninstall_software(e.id), `卸载 ${e.name}`)}
+                        className="rounded p-1 text-[var(--color-danger)] hover:bg-[var(--color-surface-hover)] disabled:opacity-50"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                    <button
+                      title="前台打开官方卸载程序（安全软件推荐）"
+                      disabled={bloatBusy !== null}
+                      onClick={() => bloatAction(e.id, () => api_clean.open_official_uninstaller(e.id), `打开卸载程序 ${e.name}`, false)}
+                      className="rounded p-1 hover:bg-[var(--color-surface-hover)] disabled:opacity-50"
+                    >
+                      <ExternalLink size={13} />
+                    </button>
+                    {e.residentMemMb > 0 && (
+                      <button
+                        title="停止后台运行（提权）"
+                        disabled={bloatBusy !== null}
+                        onClick={() => bloatAction(e.id, () => api_clean.stop_software(e.id), `停止 ${e.name}`)}
+                        className="rounded p-1 text-[var(--color-caution)] hover:bg-[var(--color-surface-hover)] disabled:opacity-50"
+                      >
+                        <Power size={13} />
+                      </button>
+                    )}
+                    <button
+                      title="强力卸载（预览后红色确认）"
+                      disabled={bloatBusy !== null}
+                      onClick={() => previewForce(e.id)}
+                      className="rounded p-1 text-[var(--color-danger)] hover:bg-[var(--color-danger-bg-soft)] disabled:opacity-50"
+                    >
+                      <Bomb size={13} />
+                    </button>
+                    <button
+                      title="扫描卸载残留"
+                      disabled={bloatBusy !== null}
+                      onClick={() => scanResidueFor(e)}
+                      className="rounded p-1 hover:bg-[var(--color-surface-hover)] disabled:opacity-50"
+                    >
+                      <FolderX size={13} />
+                    </button>
+                    <button
+                      title={e.dismissed ? "恢复提醒" : "不再提醒"}
+                      disabled={bloatBusy !== null}
+                      onClick={() => bloatAction(e.id, () => api_clean.bloatware_set_ignored(e.key, !e.dismissed), e.dismissed ? `恢复 ${e.name}` : `忽略 ${e.name}`)}
+                      className="rounded p-1 hover:bg-[var(--color-surface-hover)] disabled:opacity-50"
+                    >
+                      {e.dismissed ? <Eye size={13} /> : <EyeOff size={13} />}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 强力卸载红色确认 */}
+          {forcePlan && (
+            <div className="mt-3 rounded-xl border-2 border-[var(--color-danger)]/50 bg-[var(--color-danger-bg-soft)] p-4">
+              <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-[var(--color-danger-text)]">
+                <AlertTriangle size={14} /> 强力卸载确认：{forcePlan.name || "未知软件"}
+              </div>
+              <div className="mb-3 space-y-1 text-xs text-[var(--color-danger-text)]">
+                <div>安装目录：{forcePlan.installDir || "未定位"}{forcePlan.dirDeletable ? "（将被删除）" : "（不可删，跳过）"}</div>
+                {forcePlan.services.length > 0 && <div>删除服务：{forcePlan.services.join("、")}</div>}
+                {forcePlan.tasks.length > 0 && <div>删除计划任务：{forcePlan.tasks.join("、")}</div>}
+                <div>删除注册表项：{forcePlan.regPath || "无"}</div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  disabled={bloatBusy !== null}
+                  onClick={() => {
+                    const plan = forcePlan;
+                    setForcePlan(null);
+                    // 从当前体检结果中找回 id（name 匹配）
+                    const entry = bloat?.entries.find((x) => x.name === plan.name);
+                    if (entry) {
+                      bloatAction(entry.id, () => api_clean.force_uninstall_software(entry.id), `强力卸载 ${plan.name}`);
+                    } else {
+                      setError("无法定位该软件（请重新体检后重试）");
+                    }
+                  }}
+                  className="rounded-lg bg-[var(--color-danger)] px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+                >
+                  确认强力卸载（不可恢复）
+                </button>
+                <button onClick={() => setForcePlan(null)} className="btn text-sm">取消</button>
+              </div>
+            </div>
+          )}
+
+          {/* 残留清理确认 */}
+          {residue && residueTarget && (
+            <div className="mt-3 rounded-xl border border-[var(--color-caution)]/40 bg-[var(--color-caution)]/5 p-4">
+              <div className="mb-2 text-sm font-semibold">「{residueTarget.name}」残留清单</div>
+              {residue.dirs.length === 0 && residue.regKeys.length === 0 ? (
+                <div className="text-xs text-[var(--color-text-secondary)]">未发现残留</div>
+              ) : (
+                <>
+                  {residue.dirs.map((d) => (
+                    <div key={d.path} className="flex justify-between font-mono text-xs">
+                      <span className="truncate">{d.path}</span>
+                      <span className="font-num shrink-0">{fmt(d.size)}</span>
+                    </div>
+                  ))}
+                  {residue.regKeys.map((k) => (
+                    <div key={k} className="font-mono text-xs">{k}</div>
+                  ))}
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      disabled={bloatBusy !== null}
+                      onClick={cleanResidue}
+                      className="rounded-lg bg-[var(--color-caution)] px-4 py-1.5 text-sm font-medium text-black disabled:opacity-50"
+                    >
+                      清理全部残留
+                    </button>
+                    <button onClick={() => { setResidue(null); setResidueTarget(null); }} className="btn text-sm">取消</button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );

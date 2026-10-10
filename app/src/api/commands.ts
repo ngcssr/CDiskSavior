@@ -70,6 +70,17 @@ export const api_clean = {
   add_leftover_whitelist_entry: (e: string) => invoke<void>("add_leftover_whitelist_entry", { entry: e }),
   remove_leftover_whitelist_entry: (e: string) => invoke<void>("remove_leftover_whitelist_entry", { entry: e }),
   delete_files: (paths: string[]) => invoke<DeletePathsReport>("delete_files", { paths }),
+  // Q4 软件体检
+  scan_bloatware: (includeAll?: boolean) => invoke<BloatwareScan>("scan_bloatware", { includeAll }),
+  uninstall_software: (id: string) => invoke<void>("uninstall_software", { id }),
+  scan_residue: (name: string, publisher: string, installLocation: string) => invoke<ResidueScanReport>("scan_residue", { name, publisher, installLocation }),
+  clean_residue: (name: string, publisher: string, installLocation: string, dirs: string[], regKeys: string[]) => invoke<ResidueReport>("clean_residue", { name, publisher, installLocation, dirs, regKeys }),
+  bloatware_set_ignored: (key: string, ignored: boolean) => invoke<void>("bloatware_set_ignored", { key, ignored }),
+  stop_software: (id: string) => invoke<void>("stop_software", { id }),
+  op_started: () => invoke<boolean>("op_started"),
+  bloatware_force_preview: (id: string) => invoke<ForcePlan>("bloatware_force_preview", { id }),
+  force_uninstall_software: (id: string) => invoke<void>("force_uninstall_software", { id }),
+  open_official_uninstaller: (id: string) => invoke<void>("open_official_uninstaller", { id }),
   enhanced_delete_files: (paths: string[]) => invoke<DeletePathsReport>("enhanced_delete_files", { paths }),
   delete_leftover_folders: (paths: string[]) => invoke<DeletePathsReport>("delete_leftover_folders", { paths }),
   delete_leftovers_permanent: (paths: string[]) => invoke<DeletePathsReport>("delete_leftovers_permanent", { paths }),
@@ -239,6 +250,25 @@ export type Category = {
 };
 export type SocialCacheReport = unknown;
 export type LeftoverReport = unknown;
+// Q4 软件体检
+export type BloatwareEntry = {
+  id: string; key: string; name: string; publisher: string; version: string;
+  installLocation: string; sizeMb: number | null; icon: string | null;
+  tags: string[]; behaviors: string[]; suggestion: string;
+  trusted: boolean; security: boolean; dismissed: boolean; uninstallable: boolean;
+  autostartCount: number; residentMemMb: number;
+};
+export type BloatwareScan = {
+  entries: BloatwareEntry[]; shownCount: number; browserNotes: string[];
+};
+export type ResidueScanReport = {
+  dirs: { path: string; size: number }[]; regKeys: string[];
+};
+export type ForcePlan = {
+  name: string; installDir: string; dirDeletable: boolean;
+  services: string[]; tasks: string[]; regPath: string;
+};
+
 export type DeleteResult = unknown;
 export type DeletePathsReport = {
   successCount: number; failedCount: number; skippedCount: number;

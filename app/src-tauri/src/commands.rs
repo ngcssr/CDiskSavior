@@ -641,6 +641,101 @@ pub async fn cleanup_directory_contents(path: String) -> Result<crate::cleaner::
         .map_err(|e| format!("清空任务失败: {}", e))
 }
 
+// ============ Q4 软件体检（feature_bloatware 启用） ============
+
+/// 软件体检扫描（客观行为：自启/常驻/占用，不定性）
+#[tauri::command]
+pub async fn scan_bloatware(app: tauri::AppHandle, include_all: Option<bool>) -> Result<crate::bloatware::BloatwareScan, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let ignored = crate::bloatware::load_ignored(&app);
+        crate::bloatware::scan(&ignored, include_all.unwrap_or(false))
+    })
+    .await
+    .map_err(|e| format!("软件体检失败: {}", e))
+}
+
+/// 方法A一键卸载（提权：停服务/杀进程/官方卸载器静默）
+#[tauri::command]
+pub async fn uninstall_software(id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || crate::bloatware::uninstall(&id))
+        .await
+        .map_err(|e| format!("卸载任务失败: {}", e))?
+}
+
+/// 卸载后残留全景扫描（安装目录 + 同名数据目录 + HKCU 注册表键，严格白名单）
+#[tauri::command]
+pub async fn scan_residue(
+    name: String,
+    publisher: String,
+    install_location: String,
+) -> Result<crate::bloatware::ResidueScanReport, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::bloatware::scan_residue(&name, &publisher, &install_location)
+    })
+    .await
+    .map_err(|e| format!("残留扫描失败: {}", e))
+}
+
+/// 清理卸载残留（允许集合同场重扫，集合外强制跳过）
+#[tauri::command]
+pub async fn clean_residue(
+    name: String,
+    publisher: String,
+    install_location: String,
+    dirs: Vec<String>,
+    reg_keys: Vec<String>,
+) -> Result<crate::bloatware::ResidueReport, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::bloatware::clean_residue(&name, &publisher, &install_location, dirs, reg_keys)
+    })
+    .await
+    .map_err(|e| format!("残留清理失败: {}", e))
+}
+
+/// "不再提醒"持久化
+#[tauri::command]
+pub async fn bloatware_set_ignored(app: tauri::AppHandle, key: String, ignored: bool) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || crate::bloatware::set_ignored(&app, key, ignored))
+        .await
+        .map_err(|e| format!("更新失败: {}", e))
+}
+
+/// 停止软件后台（提权；后端按 id 重读安装目录，不信任前端路径）
+#[tauri::command]
+pub async fn stop_software(id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || crate::bloatware::stop_software(&id))
+        .await
+        .map_err(|e| format!("停止失败: {}", e))?
+}
+
+/// 提权操作是否已开始（UAC 已授权，前端轮询用）
+#[tauri::command]
+pub fn op_started() -> bool {
+    crate::bloatware::op_started()
+}
+
+/// 强力卸载预览（红色二次确认清单）
+#[tauri::command]
+pub async fn bloatware_force_preview(id: String) -> Result<crate::bloatware::ForcePlan, String> {
+    tauri::async_runtime::spawn_blocking(move || Ok(crate::bloatware::force_preview(&id)))
+        .await
+        .map_err(|e| format!("预览失败: {}", e))?
+}
+
+/// 强力卸载（提权：删服务/任务/进程/目录/注册表项）
+#[tauri::command]
+pub async fn force_uninstall_software(id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || crate::bloatware::force_uninstall(&id))
+        .await
+        .map_err(|e| format!("强力卸载失败: {}", e))?
+}
+
+/// 前台打开官方卸载程序（安全软件等有自我保护的场景）
+#[tauri::command]
+pub fn open_official_uninstaller(id: String) -> Result<(), String> {
+    crate::bloatware::open_official_uninstaller(&id)
+}
+
 // ============ M6 启动与内存（P6 真实实现） ============
 
 #[tauri::command]

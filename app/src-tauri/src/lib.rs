@@ -1,11 +1,13 @@
 mod appdata;
 mod bigfiles;
+mod bloatware;
 mod cleaner;
 mod collector;
 mod context_menu;
 mod growth;
 mod health;
 mod commands;
+mod icon;
 mod registry_clean;
 mod relocate_commands;
 mod relocate;
@@ -67,6 +69,17 @@ pub fn run() {
             commands::remove_leftover_whitelist_entry,
             commands::scan_social_cache,
             commands::delete_social_cache,
+            // Q4 软件体检（feature_bloatware）
+            commands::scan_bloatware,
+            commands::uninstall_software,
+            commands::scan_residue,
+            commands::clean_residue,
+            commands::bloatware_set_ignored,
+            commands::stop_software,
+            commands::op_started,
+            commands::bloatware_force_preview,
+            commands::force_uninstall_software,
+            commands::open_official_uninstaller,
             // M3 批量删除系（P2）
             commands::delete_files,
             commands::enhanced_delete_files,

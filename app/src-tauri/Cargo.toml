@@ -26,6 +26,8 @@ uuid = { version = "1", features = ["v4"] }                  # 迁移记录 ID
 chrono = { version = "0.4", features = ["serde"] }           # 时间戳
 regex = "1"                                                 # M5: 注册表残留命令行路径解析
 trash = "5"                                                 # P2: 回收站删除（合并设计 §5.1 定案）
+sysinfo = "0.32"                                            # Q4: 软件体检后台常驻进程内存
+image = { version = "0.25", default-features = false, features = ["png"] }  # Q4: 图标抠取 PNG 编码
 walkdir = "2"                                               # 目录遍历
 jwalk = "0.8"                                                # P3: 并行目录扫描（TreeMap）
 winreg = "0.52"                                               # P6: 注册表读写（启动项管理）
@@ -44,6 +46,8 @@ windows-sys = { version = "0.59", features = [               # Win32 API（disk-
     "Win32_System_SystemInformation",
     "Win32_System_Pipes",
     "Win32_System_Diagnostics_ToolHelp",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_WindowsAndMessaging",
 ] }
 
 # 修复：tauri-utils → schemars/preserve_order → indexmap 1.9 的 build.rs 用 autocfg 探测 std，
