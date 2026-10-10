@@ -235,40 +235,89 @@ pub fn cancel_scan() {
     CANCELLED.store(true, Ordering::Relaxed);
 }
 
+/// 分类信息（get_categories 用）
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryInfo {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub risk_level: u8,
+    pub system_managed: bool,
+}
+
+/// 全部分类的静态信息（不等扫描）
+pub fn category_infos() -> Vec<CategoryInfo> {
+    categories()
+        .into_iter()
+        .map(|c| CategoryInfo {
+            id: c.id.into(),
+            name: c.name.into(),
+            description: c.desc.into(),
+            risk_level: c.risk,
+            system_managed: c.system_managed,
+        })
+        .collect()
+}
+
+/// 扫描单个分类（内部）：collect_all=true 时保留全部文件（分页会话用）
+fn scan_one(cat: &CatDef, collect_all: bool) -> (u64, usize, Vec<FileEntry>) {
+    let (mut size, mut count) = (0u64, 0usize);
+    let mut files: Vec<FileEntry> = Vec::new();
+
+    for spec in cat.paths {
+        for dir in expand(spec) {
+            if !dir.exists() { continue; }
+            for entry in walkdir::WalkDir::new(&dir).follow_links(false).into_iter().flatten() {
+                if CANCELLED.load(Ordering::Relaxed) { break; }
+                if !entry.file_type().is_file() { continue; }
+                let name = entry.file_name().to_string_lossy();
+                if !cat.patterns.iter().any(|p| glob_match(p, &name)) { continue; }
+                let s = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                size += s;
+                count += 1;
+                if collect_all {
+                    // 分页会话：保留全部，最后按大小降序；上限 10 万条防 IPC 失控
+                    if files.len() < 100_000 {
+                        files.push(FileEntry { path: entry.path().to_string_lossy().to_string(), size: s });
+                    }
+                } else {
+                    // 常规路径：只保留 Top 10 大文件
+                    if files.len() < 10 || s > files.last().map(|f| f.size).unwrap_or(0) {
+                        files.push(FileEntry { path: entry.path().to_string_lossy().to_string(), size: s });
+                        files.sort_by(|a, b| b.size.cmp(&a.size));
+                        files.truncate(10);
+                    }
+                }
+            }
+        }
+    }
+    if collect_all {
+        files.sort_by(|a, b| b.size.cmp(&a.size));
+    }
+    (size, count, files)
+}
+
 /// 深度扫描（在 spawn_blocking 线程中调用；可取消）
 pub fn scan() -> DeepScanResult {
+    scan_filtered(None)
+}
+
+/// 常规垃圾扫描（scan_junk_files）：可选分类名过滤
+pub fn scan_filtered(category_names: Option<Vec<String>>) -> DeepScanResult {
     CANCELLED.store(false, Ordering::Relaxed);
     let t0 = std::time::Instant::now();
     let mut out = Vec::new();
     let (mut total_size, mut total_files) = (0u64, 0usize);
 
     for cat in categories() {
+        if let Some(names) = &category_names {
+            if !names.iter().any(|n| n == cat.id || n == cat.name) { continue; }
+        }
         if CANCELLED.load(Ordering::Relaxed) {
             return DeepScanResult { categories: out, total_size, total_files, duration_ms: t0.elapsed().as_millis() as u64, cancelled: true };
         }
-        let (mut size, mut count) = (0u64, 0usize);
-        let mut top: Vec<FileEntry> = Vec::new();
-
-        for spec in cat.paths {
-            for dir in expand(spec) {
-                if !dir.exists() { continue; }
-                for entry in walkdir::WalkDir::new(&dir).follow_links(false).into_iter().flatten() {
-                    if CANCELLED.load(Ordering::Relaxed) { break; }
-                    if !entry.file_type().is_file() { continue; }
-                    let name = entry.file_name().to_string_lossy();
-                    if !cat.patterns.iter().any(|p| glob_match(p, &name)) { continue; }
-                    let s = entry.metadata().map(|m| m.len()).unwrap_or(0);
-                    size += s;
-                    count += 1;
-                    // 保留 Top 10 大文件供展示
-                    if top.len() < 10 || s > top.last().map(|f| f.size).unwrap_or(0) {
-                        top.push(FileEntry { path: entry.path().to_string_lossy().to_string(), size: s });
-                        top.sort_by(|a, b| b.size.cmp(&a.size));
-                        top.truncate(10);
-                    }
-                }
-            }
-        }
+        let (size, count, top) = scan_one(&cat, false);
 
         if size > 0 {
             total_size += size;
@@ -283,6 +332,73 @@ pub fn scan() -> DeepScanResult {
 
     out.sort_by(|a, b| b.size.cmp(&a.size));
     DeepScanResult { categories: out, total_size, total_files, duration_ms: t0.elapsed().as_millis() as u64, cancelled: false }
+}
+
+// ---------- 分页会话（get_deep_junk_category_page） ----------
+// 最近一次单分类完整扫描的全量文件列表，分页从这里切片
+
+static PAGE_SESSION: std::sync::Mutex<Option<(String, Vec<FileEntry>)>> =
+    std::sync::Mutex::new(None);
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryPage {
+    pub category: String,
+    pub total_count: usize,
+    pub total_size: u64,
+    pub offset: usize,
+    pub limit: usize,
+    pub files: Vec<FileEntry>,
+}
+
+/// 扫描单分类（scan_category）：返回汇总并建立分页会话
+pub fn scan_category(category: &str) -> Result<CategoryResult, String> {
+    let cat = categories()
+        .into_iter()
+        .find(|c| c.id == category || c.name == category)
+        .ok_or_else(|| format!("未知分类: {}", category))?;
+    CANCELLED.store(false, Ordering::Relaxed);
+    let (size, count, files) = scan_one(&cat, true);
+    *PAGE_SESSION.lock().unwrap() = Some((cat.id.to_string(), files.clone()));
+    let top = files.into_iter().take(10).collect();
+    Ok(CategoryResult {
+        id: cat.id.into(), name: cat.name.into(), description: cat.desc.into(),
+        risk: cat.risk, size, file_count: count, system_managed: cat.system_managed,
+        top_files: top,
+    })
+}
+
+/// 分页读取某分类的文件列表（会话未建立时自动重扫一次）
+pub fn category_page(category: &str, offset: usize, limit: usize) -> Result<CategoryPage, String> {
+    let cat = categories()
+        .into_iter()
+        .find(|c| c.id == category || c.name == category)
+        .ok_or_else(|| format!("未知分类: {}", category))?;
+    let limit = limit.clamp(1, 2000);
+
+    let files = {
+        let session = PAGE_SESSION.lock().unwrap();
+        session
+            .as_ref()
+            .filter(|(id, _)| id == cat.id)
+            .map(|(_, files)| files.clone())
+    };
+    let files = match files {
+        Some(f) => f,
+        None => {
+            let _ = scan_category(cat.id)?;
+            PAGE_SESSION.lock().unwrap().as_ref().map(|(_, f)| f.clone()).unwrap_or_default()
+        }
+    };
+
+    let total_count = files.len();
+    let total_size = files.iter().map(|f| f.size).sum();
+    let page: Vec<FileEntry> = files.iter().skip(offset).take(limit).cloned().collect();
+    Ok(CategoryPage {
+        category: cat.id.into(),
+        total_count, total_size, offset, limit,
+        files: page,
+    })
 }
 
 /// 删除指定类别（当场重扫 + R1 引擎逐文件过检）

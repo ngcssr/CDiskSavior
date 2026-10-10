@@ -244,3 +244,264 @@ pub fn compare_growth(drive: &str) -> Result<GrowthReport, String> {
 pub fn has_baseline(drive: &str) -> bool {
     snapshot_file(drive).map(|f| f.exists()).unwrap_or(false)
 }
+
+// ============ 全盘变化分析（scan_disk_growth 系） ============
+
+static GROWTH_CANCELLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn cancel_growth_scan() {
+    GROWTH_CANCELLED.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiskScanAndAnalyzeResponse {
+    pub growth: GrowthReport,
+    pub total_files_scanned: usize,
+    pub scan_duration_ms: u64,
+    pub drive_letter: String,
+}
+
+/// 全盘空间变化分析：无基线时自动创建基线（首轮为空报告），否则对比并返回明细
+pub fn scan_disk_growth(drive: &str, max_change_entries: Option<usize>) -> Result<DiskScanAndAnalyzeResponse, String> {
+    use std::sync::atomic::Ordering;
+    GROWTH_CANCELLED.store(false, Ordering::Relaxed);
+    let t0 = std::time::Instant::now();
+    let drive_root = format!("{}\\", drive.trim_end_matches(['\\', ':']).to_ascii_uppercase().trim_end_matches(':'));
+
+    // 无基线：先建基线，返回空报告（与 UI 的"创建基线"流程一致）
+    if !has_baseline(&drive_root) {
+        create_snapshot(&drive_root)?;
+        let (files, _) = count_files(&drive_root);
+        return Ok(DiskScanAndAnalyzeResponse {
+            growth: GrowthReport { entries: vec![], total_growth: 0, baseline_at: 0, time_span_hours: 0.0, has_baseline: false },
+            total_files_scanned: files,
+            scan_duration_ms: t0.elapsed().as_millis() as u64,
+            drive_letter: drive_root,
+        });
+    }
+
+    // 有基线：对比（不截断，max_change_entries 收敛）
+    let file = snapshot_file(&drive_root).ok_or("尚未创建基线快照")?;
+    let (snap, _) = crate::state::read_json_self_heal::<Snapshot>(&file)
+        .map_err(|e| e.to_string())?
+        .ok_or("基线快照损坏")?;
+    let current = scan_drive_levels(&drive_root);
+    let old_map: std::collections::HashMap<String, u64> = snap.entries.into_iter().collect();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs()).unwrap_or(0);
+    let span_hours = (now.saturating_sub(snap.created_at)) as f64 / 3600.0;
+
+    let mut entries = Vec::new();
+    let mut total_growth = 0i64;
+    for (path, new_size) in &current {
+        let old_size = old_map.get(path).copied().unwrap_or(0);
+        let diff = *new_size as i64 - old_size as i64;
+        if diff == 0 { continue; }
+        let diff_percent = if old_size > 0 { diff as f64 / old_size as f64 * 100.0 } else { 100.0 };
+        let name = Path::new(path).file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_else(|| path.clone());
+        let level = if old_size == 0 && *new_size > 0 {
+            "new"
+        } else if diff < 0 {
+            "decreased"
+        } else if diff > 1024 * 1024 * 1024 || diff_percent > 50.0 {
+            "significant"
+        } else if diff > 100 * 1024 * 1024 || diff_percent > 20.0 {
+            "fast"
+        } else {
+            "stable"
+        };
+        if level != "stable" {
+            total_growth += diff.max(0);
+            entries.push(GrowthEntry {
+                path: path.clone(), name, old_size, new_size: *new_size,
+                diff, diff_percent, level: level.to_string(),
+            });
+        }
+    }
+    entries.sort_by(|a, b| b.diff.cmp(&a.diff));
+    let max = max_change_entries.unwrap_or(100).clamp(10, 2000);
+    entries.truncate(max);
+    let (files, _) = count_files(&drive_root);
+    Ok(DiskScanAndAnalyzeResponse {
+        growth: GrowthReport { entries, total_growth, baseline_at: snap.created_at, time_span_hours: span_hours, has_baseline: true },
+        total_files_scanned: files,
+        scan_duration_ms: t0.elapsed().as_millis() as u64,
+        drive_letter: drive_root,
+    })
+}
+
+/// 统计文件数（可取消；用于进度展示）
+fn count_files(root: &str) -> (usize, bool) {
+    use std::sync::atomic::Ordering;
+    let mut n = 0usize;
+    for entry in jwalk::WalkDir::new(root).follow_links(false).into_iter().flatten() {
+        if GROWTH_CANCELLED.load(Ordering::Relaxed) { return (n, true); }
+        if entry.file_type().is_file() { n += 1; }
+    }
+    (n, false)
+}
+
+// ---------- 文件级变化明细 ----------
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileDetailEntry {
+    pub path: String,
+    pub name: String,
+    pub size: u64,
+    pub modified: i64,
+    pub is_new: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileDetailsResponse {
+    pub entries: Vec<FileDetailEntry>,
+    pub total_count: usize,
+    pub offset: usize,
+    pub limit: usize,
+}
+
+/// 文件级变化明细：指定目录下、基线时间之后修改/新增的文件（分页，大小降序）
+pub fn get_file_change_details(path: &str, offset: usize, limit: usize, drive: &str) -> Result<FileDetailsResponse, String> {
+    use std::sync::atomic::Ordering;
+    GROWTH_CANCELLED.store(false, Ordering::Relaxed);
+    let root = std::path::PathBuf::from(path);
+    if !root.is_dir() {
+        return Err("目标目录不存在".into());
+    }
+    let drive_root = format!("{}\\", drive.trim_end_matches(['\\', ':']).to_ascii_uppercase().trim_end_matches(':'));
+    let baseline_at = snapshot_file(&drive_root)
+        .and_then(|f| crate::state::read_json_self_heal::<Snapshot>(&f).ok().flatten())
+        .map(|(s, _)| s.created_at as i64)
+        .unwrap_or(0);
+
+    let mut entries = Vec::new();
+    for entry in jwalk::WalkDir::new(&root).follow_links(false).into_iter().flatten() {
+        if GROWTH_CANCELLED.load(Ordering::Relaxed) { break; }
+        if !entry.file_type().is_file() { continue; }
+        let mtime = entry.metadata().ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        // 基线后修改/新增的文件才入列；无基线时全部入列
+        if baseline_at > 0 && mtime < baseline_at { continue; }
+        let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+        let p = entry.path();
+        entries.push(FileDetailEntry {
+            path: p.to_string_lossy().to_string(),
+            name: entry.file_name().to_string_lossy().to_string(),
+            size,
+            modified: mtime,
+            is_new: true,
+        });
+    }
+    entries.sort_by(|a, b| b.size.cmp(&a.size));
+    let total = entries.len();
+    let limit = limit.clamp(1, 2000);
+    let page: Vec<FileDetailEntry> = entries.into_iter().skip(offset).take(limit).collect();
+    Ok(FileDetailsResponse { entries: page, total_count: total, offset, limit })
+}
+
+// ---------- 目录级变化明细 ----------
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirDetailEntry {
+    pub path: String,
+    pub name: String,
+    pub size: u64,
+    pub file_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirDetailsResponse {
+    pub entries: Vec<DirDetailEntry>,
+    pub total_count: usize,
+    pub offset: usize,
+    pub limit: usize,
+}
+
+/// 目录级明细：指定目录的直接子目录（大小+文件数，分页，大小降序）
+pub fn get_directory_change_details(path: &str, offset: usize, limit: usize) -> Result<DirDetailsResponse, String> {
+    let root = std::path::PathBuf::from(path);
+    if !root.is_dir() {
+        return Err("目标目录不存在".into());
+    }
+    let mut entries = Vec::new();
+    if let Ok(read) = std::fs::read_dir(&root) {
+        for e in read.flatten() {
+            let p = e.path();
+            if !p.is_dir() { continue; }
+            if super::cleaner::engine::is_reparse_point(&p) { continue; }
+            let (size, count, _) = dir_stats(&p);
+            entries.push(DirDetailEntry {
+                path: p.to_string_lossy().to_string(),
+                name: e.file_name().to_string_lossy().to_string(),
+                size, file_count: count,
+            });
+        }
+    }
+    entries.sort_by(|a, b| b.size.cmp(&a.size));
+    let total = entries.len();
+    let limit = limit.clamp(1, 2000);
+    let page: Vec<DirDetailEntry> = entries.into_iter().skip(offset).take(limit).collect();
+    Ok(DirDetailsResponse { entries: page, total_count: total, offset, limit })
+}
+
+// ---------- HTML 导出目录树 ----------
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportNode {
+    pub path: String,
+    pub name: String,
+    pub size: u64,
+    pub file_count: usize,
+    pub children: Vec<ExportNode>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportTreeResponse {
+    pub nodes: Vec<ExportNode>,
+    pub max_depth: usize,
+}
+
+/// HTML 导出目录树：多根路径，限制深度（默认 3，1-6）
+pub fn get_export_tree(paths: &[String], max_depth: Option<usize>) -> ExportTreeResponse {
+    let depth = max_depth.unwrap_or(3).clamp(1, 6);
+    let nodes = paths
+        .iter()
+        .map(|p| export_node(std::path::Path::new(p), depth))
+        .collect();
+    ExportTreeResponse { nodes, max_depth: depth }
+}
+
+fn export_node(path: &Path, depth: usize) -> ExportNode {
+    let name = path.file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.to_string_lossy().to_string());
+    let mut children = Vec::new();
+    if depth > 0 && path.is_dir() && !super::cleaner::engine::is_reparse_point(path) {
+        if let Ok(read) = std::fs::read_dir(path) {
+            let mut subs: Vec<_> = read.flatten()
+                .map(|e| e.path())
+                .filter(|p| p.is_dir())
+                .collect();
+            // 每层最多 50 个子目录（按名称序，导出报告的可读性边界）
+            subs.sort();
+            subs.truncate(50);
+            children = subs.into_iter().map(|p| export_node(&p, depth - 1)).collect();
+        }
+    }
+    let (size, count) = if path.is_dir() { let (s, c, _) = dir_stats(path); (s, c) } else { (0, 0) };
+    ExportNode {
+        path: path.to_string_lossy().to_string(),
+        name, size, file_count: count, children,
+    }
+}

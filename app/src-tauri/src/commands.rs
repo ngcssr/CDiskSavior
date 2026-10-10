@@ -82,6 +82,133 @@ pub async fn compare_disk_growth(drive: String) -> Result<crate::growth::GrowthR
         .map_err(|e| format!("对比失败: {}", e))?
 }
 
+// ============ M2 深度垃圾分类/分页（P1 补齐） ============
+
+/// 常规垃圾扫描（可选分类名过滤；与深度扫描共用 18 类资产）
+#[tauri::command]
+pub async fn scan_junk_files(categories: Option<Vec<String>>) -> Result<crate::cleaner::deep_junk::DeepScanResult, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::cleaner::deep_junk::scan_filtered(categories))
+        .await
+        .map_err(|e| format!("扫描失败: {}", e))
+}
+
+/// 全部分类的静态信息
+#[tauri::command]
+pub fn get_categories() -> Vec<crate::cleaner::deep_junk::CategoryInfo> {
+    crate::cleaner::deep_junk::category_infos()
+}
+
+/// 扫描单分类（同时建立分页会话）
+#[tauri::command]
+pub async fn scan_category(category: String) -> Result<crate::cleaner::deep_junk::CategoryResult, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::cleaner::deep_junk::scan_category(&category))
+        .await
+        .map_err(|e| format!("扫描失败: {}", e))?
+}
+
+/// 分类文件分页（会话未建立时自动重扫）
+#[tauri::command]
+pub async fn get_deep_junk_category_page(
+    category: String,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) -> Result<crate::cleaner::deep_junk::CategoryPage, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::cleaner::deep_junk::category_page(&category, offset.unwrap_or(0), limit.unwrap_or(500))
+    })
+    .await
+    .map_err(|e| format!("分页读取失败: {}", e))?
+}
+
+// ============ M2 增长明细与导出（P1 补齐） ============
+
+/// 全盘空间变化分析（无基线自动创建；有基线返回对比明细）
+#[tauri::command]
+pub async fn scan_disk_growth(drive: String, max_change_entries: Option<usize>) -> Result<crate::growth::DiskScanAndAnalyzeResponse, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::growth::scan_disk_growth(&drive, max_change_entries))
+        .await
+        .map_err(|e| format!("全盘分析任务失败: {}", e))?
+}
+
+#[tauri::command]
+pub fn cancel_disk_growth_scan() {
+    crate::growth::cancel_growth_scan();
+}
+
+/// 文件级变化明细（基线时间后修改/新增，分页）
+#[tauri::command]
+pub async fn get_disk_growth_file_details(
+    path: String,
+    offset: Option<usize>,
+    limit: Option<usize>,
+    drive: Option<String>,
+) -> Result<crate::growth::FileDetailsResponse, String> {
+    let d = drive.unwrap_or_else(|| "C:\\".into());
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::growth::get_file_change_details(&path, offset.unwrap_or(0), limit.unwrap_or(500), &d)
+    })
+    .await
+    .map_err(|e| format!("读取文件明细失败: {}", e))?
+}
+
+/// 目录级变化明细（直接子目录大小+文件数，分页）
+#[tauri::command]
+pub async fn get_disk_growth_directory_details(
+    path: String,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) -> Result<crate::growth::DirDetailsResponse, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::growth::get_directory_change_details(&path, offset.unwrap_or(0), limit.unwrap_or(500))
+    })
+    .await
+    .map_err(|e| format!("读取目录明细失败: {}", e))?
+}
+
+/// HTML 导出目录树（多根路径 + 深度限制）
+#[tauri::command]
+pub async fn get_disk_growth_export_tree(paths: Vec<String>, max_depth: Option<usize>) -> Result<crate::growth::ExportTreeResponse, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::growth::get_export_tree(&paths, max_depth))
+        .await
+        .map_err(|e| format!("导出树生成失败: {}", e))
+}
+
+/// 通过系统保存对话框写入增长分析 HTML
+#[tauri::command]
+pub async fn save_disk_growth_html(
+    app: tauri::AppHandle,
+    content: String,
+    default_file_name: String,
+    dialog_title: Option<String>,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    if content.is_empty() {
+        return Err("导出的 HTML 内容为空".to_string());
+    }
+    let selected_path = app
+        .dialog()
+        .file()
+        .set_title(dialog_title.as_deref().unwrap_or("导出增长报告"))
+        .set_file_name(&default_file_name)
+        .add_filter("HTML 文件", &["html"])
+        .blocking_save_file();
+    let Some(selected_path) = selected_path else {
+        return Ok(None); // 用户取消属正常流程
+    };
+    let mut output_path = std::path::PathBuf::from(selected_path.to_string());
+    let has_html = output_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("html"));
+    if !has_html {
+        output_path.set_extension("html");
+    }
+    std::fs::write(&output_path, content)
+        .map_err(|e| format!("写入 HTML 失败（{}）: {}", output_path.display(), e))?;
+    Ok(Some(output_path.to_string_lossy().into_owned()))
+}
+
 /// 大文件扫描（阈值过滤 + Top 200 + 可取消）
 #[tauri::command]
 pub async fn scan_large_files(root: String, min_size: Option<u64>) -> Result<crate::bigfiles::LargeFileReport, String> {
@@ -348,6 +475,30 @@ pub fn open_recycle_bin() -> Result<(), String> {
     std::process::Command::new("explorer")
         .arg("shell:RecycleBinFolder")
         .spawn().map_err(|e| format!("打开回收站失败: {}", e))?;
+    Ok(())
+}
+
+/// 打开文件（R10/V23：排除可执行扩展名，避免任意路径执行面）
+#[tauri::command]
+pub fn open_file(path: String) -> Result<(), String> {
+    const EXECUTABLE_EXTS: &[&str] = &[
+        "exe", "bat", "cmd", "ps1", "scr", "msi", "vbs", "js", "lnk", "com", "pif",
+    ];
+    let p = std::path::Path::new(&path);
+    let ext = p
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    if EXECUTABLE_EXTS.contains(&ext.as_str()) {
+        return Err(format!("可执行类型 .{} 不允许通过此入口打开", ext));
+    }
+    if !p.is_file() {
+        return Err("目标不是有效文件".into());
+    }
+    std::process::Command::new("explorer")
+        .arg(&path)
+        .spawn()
+        .map_err(|e| format!("打开文件失败: {}", e))?;
     Ok(())
 }
 

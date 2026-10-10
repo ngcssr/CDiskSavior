@@ -6,6 +6,7 @@
  * 其余命令调用会得到后端的"P1 骨架占位"错误——前端据此渲染占位状态。
  */
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import type { ModuleId } from "../store";
 
 /** 统一 invoke：透传 Tauri IPC */
@@ -29,11 +30,11 @@ export const api_insight = {
   scan_drive: (root: string) => invoke<TreeNode>("scan_drive", { root }),
   scan_dir: (path: string) => invoke<TreeNode>("scan_dir", { path }),
   load_scan_cache: (root: string) => invoke<ScanCache | null>("load_scan_cache", { root }),
-  scan_disk_growth: () => invoke<GrowthReport>("scan_disk_growth"),
+  scan_disk_growth: (drive: string, maxEntries?: number) => invoke<DiskGrowthScanResponse>("scan_disk_growth", { drive, max_change_entries: maxEntries }),
   cancel_disk_growth_scan: () => invoke<void>("cancel_disk_growth_scan"),
-  get_disk_growth_directory_details: (p: string) => invoke<GrowthDirDetails>("get_disk_growth_directory_details", { path: p }),
-  get_disk_growth_file_details: (p: string) => invoke<GrowthFileDetails>("get_disk_growth_file_details", { path: p }),
-  get_disk_growth_export_tree: () => invoke<GrowthTree>("get_disk_growth_export_tree"),
+  get_disk_growth_directory_details: (p: string, offset?: number, limit?: number) => invoke<GrowthDirDetails>("get_disk_growth_directory_details", { path: p, offset, limit }),
+  get_disk_growth_file_details: (p: string, offset?: number, limit?: number, drive?: string) => invoke<GrowthFileDetails>("get_disk_growth_file_details", { path: p, offset, limit, drive }),
+  get_disk_growth_export_tree: (paths: string[], maxDepth?: number) => invoke<GrowthTree>("get_disk_growth_export_tree", { paths, max_depth: maxDepth }),
   save_disk_growth_html: (content: string, name: string) => invoke<string | null>("save_disk_growth_html", { content, default_file_name: name, dialog_title: "导出增长报告" }),
   scan_hotspot: (path?: string) => invoke<HotspotReport>("scan_hotspot", { path }),
   cancel_hotspot_scan: () => invoke<void>("cancel_hotspot_scan"),
@@ -56,8 +57,8 @@ export const api_clean = {
   scan_deep_junk_files: () => invoke<DeepScanResult>("scan_deep_junk_files"),
   cancel_deep_junk_scan: () => invoke<void>("cancel_deep_junk_scan"),
   delete_deep_junk_files: (ids: string[]) => invoke<DeepDeleteReport>("delete_deep_junk_files", { ids }),
-  scan_junk_files: () => invoke<JunkReport>("scan_junk_files"),
-  get_deep_junk_category_page: (cat: string, page: number) => invoke<DeepJunkPage>("get_deep_junk_category_page", { category: cat, page }),
+  scan_junk_files: (categories?: string[]) => invoke<JunkReport>("scan_junk_files", { categories }),
+  get_deep_junk_category_page: (cat: string, offset?: number, limit?: number) => invoke<DeepJunkPage>("get_deep_junk_category_page", { category: cat, offset, limit }),
   scan_category: (cat: string) => invoke<CategoryReport>("scan_category", { category: cat }),
   get_categories: () => invoke<Category[]>("get_categories"),
   scan_social_cache: () => invoke<SocialScan>("scan_social_cache"),
@@ -157,8 +158,10 @@ export const api_settings = {
   get_distribution_channel: () => invoke<string>("get_distribution_channel"),
   open_logs_folder: () => invoke<void>("open_logs_folder"),
   pick_folder_dialog: (title: string) => invoke<string | null>("pick_folder_dialog", { title }),
+  // open_file 走后端命令（R10：排除可执行扩展名）；
+  // reveal_in_folder 走 tauri-plugin-opener（映射表处置，纯选择不执行）
   open_file: (p: string) => invoke<void>("open_file", { path: p }),
-  reveal_in_folder: (p: string) => invoke<void>("reveal_in_folder", { path: p }),
+  reveal_in_folder: (p: string) => revealItemInDir(p),
   format_size: (bytes: number) => invoke<string>("format_size", { bytes }),
   get_physical_size: (p: string) => invoke<number>("get_physical_size", { path: p }),
   verify_integrity: () => invoke<IntegrityReport>("verify_integrity"),
@@ -194,9 +197,22 @@ export type TreeNode = {
   children?: TreeNode[];
 };
 export type ScanCache = { scannedAt: number; root: string; tree: TreeNode };
-export type GrowthDirDetails = unknown;
-export type GrowthFileDetails = unknown;
-export type GrowthTree = unknown;
+// 增长明细与导出
+export type DiskGrowthScanResponse = {
+  growth: GrowthReport; totalFilesScanned: number; scanDurationMs: number; driveLetter: string;
+};
+export type GrowthDirDetails = {
+  entries: { path: string; name: string; size: number; fileCount: number }[];
+  totalCount: number; offset: number; limit: number;
+};
+export type GrowthFileDetails = {
+  entries: { path: string; name: string; size: number; modified: number; isNew: boolean }[];
+  totalCount: number; offset: number; limit: number;
+};
+export type GrowthTreeNode = {
+  path: string; name: string; size: number; fileCount: number; children: GrowthTreeNode[];
+};
+export type GrowthTree = { nodes: GrowthTreeNode[]; maxDepth: number };
 export type LargeFileEntry = {
   path: string; name: string; size: number; modified: number; dir: string;
 };
@@ -209,11 +225,16 @@ export type CleanupReport = { freed: number; freeBefore: number; freeAfter: numb
 export type CleanupStats = { totalFreed: number; totalRuns: number; lastAt: number };
 export type OrphanScan = { confirmed: OrphanEntry[] };
 export type ResidueReport = { freed: number; errors: string[] };
-export type JunkReport = unknown;
+export type JunkReport = DeepScanResult;
 export type DeepJunkReport = unknown;
-export type DeepJunkPage = unknown;
-export type CategoryReport = unknown;
-export type Category = unknown;
+export type DeepJunkPage = {
+  category: string; totalCount: number; totalSize: number;
+  offset: number; limit: number; files: { path: string; size: number }[];
+};
+export type CategoryReport = DeepCategoryResult;
+export type Category = {
+  id: string; name: string; description: string; riskLevel: number; systemManaged: boolean;
+};
 export type SocialCacheReport = unknown;
 export type LeftoverReport = unknown;
 export type DeleteResult = unknown;

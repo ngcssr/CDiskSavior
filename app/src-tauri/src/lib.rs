@@ -20,6 +20,7 @@ mod tune;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             // M1 总览
             commands::get_drives,
@@ -37,6 +38,17 @@ pub fn run() {
             commands::cancel_large_file_scan,
             commands::has_disk_snapshot,
             commands::load_scan_cache,
+            // M2 分类扫描/分页 + 增长明细导出（P1）
+            commands::scan_junk_files,
+            commands::get_categories,
+            commands::scan_category,
+            commands::get_deep_junk_category_page,
+            commands::scan_disk_growth,
+            commands::cancel_disk_growth_scan,
+            commands::get_disk_growth_file_details,
+            commands::get_disk_growth_directory_details,
+            commands::get_disk_growth_export_tree,
+            commands::save_disk_growth_html,
             // M3 一键清理
             commands::list_cleanup_items,
             commands::run_cleanup,
@@ -82,6 +94,7 @@ pub fn run() {
             commands::open_apps_settings,
             commands::set_always_on_top,
             commands::open_recycle_bin,
+            commands::open_file,
             // M8 设置与工具（P7 实现）
             commands::check_admin_privilege,
             commands::get_data_directory,
