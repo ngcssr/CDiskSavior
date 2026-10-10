@@ -66,6 +66,12 @@ pub fn run() {
             commands::remove_leftover_whitelist_entry,
             commands::scan_social_cache,
             commands::delete_social_cache,
+            // M3 批量删除系（P2）
+            commands::delete_files,
+            commands::enhanced_delete_files,
+            commands::delete_leftover_folders,
+            commands::delete_leftovers_permanent,
+            commands::cleanup_directory_contents,
             // M4 空间腾挪（P2 实现）
             relocate_commands::scan_relocate_targets,
             relocate_commands::list_locking_processes,

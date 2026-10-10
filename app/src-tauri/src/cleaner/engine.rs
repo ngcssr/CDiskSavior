@@ -57,7 +57,7 @@ pub fn is_reparse_point(path: &Path) -> bool {
 /// 第 2 层：canonicalize 路径校验
 ///
 /// 解析 junction/symlink 到真实目标 → 必须在允许根下且非根本身
-fn is_safe_path(path: &Path, allowed_roots: &[PathBuf]) -> bool {
+pub fn is_safe_path(path: &Path, allowed_roots: &[PathBuf]) -> bool {
     // 第 2 层 a：受保护前缀
     let canon = match std::fs::canonicalize(path) {
         Ok(c) => c,
@@ -141,6 +141,24 @@ fn safe_remove_dir_all(path: &Path) -> std::io::Result<()> {
         }
     }
     std::fs::remove_dir(path) // 删自身
+}
+
+/// 清空目录内容但保留目录本身（V6 同款：跳过 reparse 子项，不穿透 junction）
+pub fn clear_dir_contents(path: &Path) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(path)? {
+        let entry = entry?;
+        let p = entry.path();
+        if is_reparse_point(&p) {
+            log::info!("跳过 reparse point 子项: {}", p.display());
+            continue;
+        }
+        if p.is_dir() {
+            safe_remove_dir_all(&p)?;
+        } else {
+            std::fs::remove_file(&p)?;
+        }
+    }
+    Ok(())
 }
 
 /// 计算目录大小

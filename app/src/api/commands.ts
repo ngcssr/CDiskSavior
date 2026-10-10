@@ -69,11 +69,11 @@ export const api_clean = {
   list_leftover_whitelist: () => invoke<string[]>("list_leftover_whitelist"),
   add_leftover_whitelist_entry: (e: string) => invoke<void>("add_leftover_whitelist_entry", { entry: e }),
   remove_leftover_whitelist_entry: (e: string) => invoke<void>("remove_leftover_whitelist_entry", { entry: e }),
-  delete_files: (paths: string[]) => invoke<DeleteResult>("delete_files", { paths }),
-  enhanced_delete_files: (paths: string[]) => invoke<DeleteResult>("enhanced_delete_files", { paths }),
-  delete_leftover_folders: (paths: string[]) => invoke<DeleteResult>("delete_leftover_folders", { paths }),
-  delete_leftovers_permanent: (paths: string[]) => invoke<DeleteResult>("delete_leftovers_permanent", { paths }),
-  cleanup_directory_contents: (p: string) => invoke<DeleteResult>("cleanup_directory_contents", { path: p }),
+  delete_files: (paths: string[]) => invoke<DeletePathsReport>("delete_files", { paths }),
+  enhanced_delete_files: (paths: string[]) => invoke<DeletePathsReport>("enhanced_delete_files", { paths }),
+  delete_leftover_folders: (paths: string[]) => invoke<DeletePathsReport>("delete_leftover_folders", { paths }),
+  delete_leftovers_permanent: (paths: string[]) => invoke<DeletePathsReport>("delete_leftovers_permanent", { paths }),
+  cleanup_directory_contents: (p: string) => invoke<DeletePathsReport>("cleanup_directory_contents", { path: p }),
   record_cleanup_action: (a: CleanupAction) => invoke<void>("record_cleanup_action", { action: a }),
   open_recycle_bin: () => invoke<void>("open_recycle_bin"),
 };
@@ -238,6 +238,10 @@ export type Category = {
 export type SocialCacheReport = unknown;
 export type LeftoverReport = unknown;
 export type DeleteResult = unknown;
+export type DeletePathsReport = {
+  successCount: number; failedCount: number; skippedCount: number;
+  freed: number; errors: string[]; skipped: string[];
+};
 export type CleanupAction = unknown;
 export type RelocateTarget = { label: string; source: string; targetSubdir: string; size: number; path: string; isJunction: boolean };
 export type LockingProcess = { pid: number; name: string; path?: string };

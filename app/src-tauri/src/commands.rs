@@ -364,6 +364,48 @@ pub async fn delete_social_cache(app: String, categories: Vec<String>) -> Result
         .map_err(|e| format!("删除失败: {}", e))
 }
 
+// ============ M3 批量删除系（P2 补齐，R1 四层护栏） ============
+
+/// 删除文件（移入回收站；允许集合 = 深度垃圾 18 类展开根，当场重扫）
+#[tauri::command]
+pub async fn delete_files(paths: Vec<String>) -> Result<crate::cleaner::bulk_delete::DeletePathsReport, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::cleaner::bulk_delete::delete_files(&paths))
+        .await
+        .map_err(|e| format!("删除任务失败: {}", e))
+}
+
+/// 增强删除（永久删除 + 占用重试 3 次）
+#[tauri::command]
+pub async fn enhanced_delete_files(paths: Vec<String>) -> Result<crate::cleaner::bulk_delete::DeletePathsReport, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::cleaner::bulk_delete::enhanced_delete_files(&paths))
+        .await
+        .map_err(|e| format!("删除任务失败: {}", e))
+}
+
+/// 卸载残留文件夹移入回收站（允许集合 = 残留扫描当场清单）
+#[tauri::command]
+pub async fn delete_leftover_folders(paths: Vec<String>) -> Result<crate::cleaner::bulk_delete::DeletePathsReport, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::cleaner::bulk_delete::delete_leftover_folders(&paths))
+        .await
+        .map_err(|e| format!("删除任务失败: {}", e))
+}
+
+/// 卸载残留文件夹永久删除（R1 唯一原语）
+#[tauri::command]
+pub async fn delete_leftovers_permanent(paths: Vec<String>) -> Result<crate::cleaner::bulk_delete::DeletePathsReport, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::cleaner::bulk_delete::delete_leftovers_permanent(&paths))
+        .await
+        .map_err(|e| format!("删除任务失败: {}", e))
+}
+
+/// 清空深度垃圾类别目录内容（保留目录；精确命中校验）
+#[tauri::command]
+pub async fn cleanup_directory_contents(path: String) -> Result<crate::cleaner::bulk_delete::DeletePathsReport, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::cleaner::bulk_delete::cleanup_directory_contents(&path))
+        .await
+        .map_err(|e| format!("清空任务失败: {}", e))
+}
+
 // ============ M6 启动与内存（P6 真实实现） ============
 
 #[tauri::command]

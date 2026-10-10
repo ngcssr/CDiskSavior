@@ -25,6 +25,7 @@ junction = "1"                                              # V8 修复：FSCTL 
 uuid = { version = "1", features = ["v4"] }                  # 迁移记录 ID
 chrono = { version = "0.4", features = ["serde"] }           # 时间戳
 regex = "1"                                                 # M5: 注册表残留命令行路径解析
+trash = "5"                                                 # P2: 回收站删除（合并设计 §5.1 定案）
 walkdir = "2"                                               # 目录遍历
 jwalk = "0.8"                                                # P3: 并行目录扫描（TreeMap）
 winreg = "0.52"                                               # P6: 注册表读写（启动项管理）

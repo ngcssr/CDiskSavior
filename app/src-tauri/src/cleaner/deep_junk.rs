@@ -229,6 +229,14 @@ fn categories() -> Vec<CatDef> {
     ]
 }
 
+/// 深度垃圾 18 类的全部展开根（批量删除允许集合，当场重扫）
+pub fn all_scan_roots() -> Vec<PathBuf> {
+    categories()
+        .iter()
+        .flat_map(|c| c.paths.iter().flat_map(expand))
+        .collect()
+}
+
 // ---------- 扫描 ----------
 
 pub fn cancel_scan() {
