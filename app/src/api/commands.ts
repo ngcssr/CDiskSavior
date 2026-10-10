@@ -18,7 +18,7 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
 export const api_dashboard = {
   get_drives: () => invoke<DriveInfo[]>("get_drives"),
   get_disk_info: () => invoke<DiskInfo>("get_disk_info"),
-  get_disk_health: () => invoke<DiskHealth[]>("query_disk_health"),
+  get_disk_health: () => invoke<DiskHealth[]>("get_disk_health"),
   get_health_score: () => invoke<HealthScore>("get_health_score"),
   get_system_info: () => invoke<SystemInfo>("get_system_info"),
   memory_report: () => invoke<MemoryReport>("memory_report"),

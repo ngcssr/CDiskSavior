@@ -27,6 +27,7 @@ pub fn run() {
             commands::get_drives,
             commands::memory_report,
             commands::query_disk_health,
+            commands::get_disk_health,
             commands::get_health_score,
             commands::pagefile_check,
             // M2 磁盘透视

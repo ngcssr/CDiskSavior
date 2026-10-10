@@ -25,6 +25,12 @@ pub async fn query_disk_health() -> Result<Vec<crate::health::DiskHealth>, Strin
         .map_err(|e| format!("查询失败: {}", e))?
 }
 
+/// 磁盘健康（映射表统一命令名 get_disk_health；与 query_disk_health 同实现）
+#[tauri::command]
+pub async fn get_disk_health() -> Result<Vec<crate::health::DiskHealth>, String> {
+    query_disk_health().await
+}
+
 /// 系统健康评分（100 = 磁盘 40 + 休眠 30 + 垃圾 30）
 #[tauri::command]
 pub async fn get_health_score() -> Result<crate::health::HealthScore, String> {
