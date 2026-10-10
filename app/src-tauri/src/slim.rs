@@ -328,6 +328,11 @@ fn get_winsxs_size() -> Option<u64> {
     Some(total)
 }
 
+/// 公开版本（供 commands.rs 调用）
+pub fn run_elevated_ps_pub(script: &str) -> Result<String, String> {
+    run_elevated_ps(script)
+}
+
 /// 按操作提权执行 PowerShell 脚本（R4 模型：disk-butler run_elevated_ps 蓝本）
 ///
 /// 脚本经 UTF-16LE+Base64 编码内联 -EncodedCommand，

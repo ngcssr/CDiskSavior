@@ -6,6 +6,7 @@ mod scan;
 mod slim;
 mod slim_commands;
 mod state;
+mod tune;
 
 // P1 骨架 + P2 M4 空间腾挪命令
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -55,6 +56,11 @@ pub fn run() {
             commands::open_apps_settings,
             commands::set_always_on_top,
             commands::open_recycle_bin,
+            // M8 设置与工具（P7 实现）
+            commands::check_admin_privilege,
+            commands::get_data_directory,
+            commands::format_size,
+            commands::verify_integrity,
             // M5 系统瘦身（P5 实现）
             slim_commands::get_system_slim_status,
             slim_commands::enable_hibernation,
