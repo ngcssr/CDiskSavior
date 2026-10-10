@@ -84,12 +84,19 @@ pub async fn compare_disk_growth(drive: String) -> Result<crate::growth::GrowthR
 
 // ============ M2 深度垃圾分类/分页（P1 补齐） ============
 
-/// 常规垃圾扫描（可选分类名过滤；与深度扫描共用 18 类资产）
+/// 常规垃圾扫描（可选分类名过滤；与深度扫描共用 18 类资产，分类级进度事件）
 #[tauri::command]
-pub async fn scan_junk_files(categories: Option<Vec<String>>) -> Result<crate::cleaner::deep_junk::DeepScanResult, String> {
-    tauri::async_runtime::spawn_blocking(move || crate::cleaner::deep_junk::scan_filtered(categories))
-        .await
-        .map_err(|e| format!("扫描失败: {}", e))
+pub async fn scan_junk_files(app: tauri::AppHandle, categories: Option<Vec<String>>) -> Result<crate::cleaner::deep_junk::DeepScanResult, String> {
+    use tauri::Emitter;
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::cleaner::deep_junk::scan_filtered_with_progress(categories, &|cat, (done, total)| {
+            let _ = app.emit("deep-junk:progress", serde_json::json!({
+                "category": cat, "done": done, "total": total,
+            }));
+        })
+    })
+    .await
+    .map_err(|e| format!("扫描失败: {}", e))
 }
 
 /// 全部分类的静态信息
@@ -122,12 +129,17 @@ pub async fn get_deep_junk_category_page(
 
 // ============ M2 增长明细与导出（P1 补齐） ============
 
-/// 全盘空间变化分析（无基线自动创建；有基线返回对比明细）
+/// 全盘空间变化分析（无基线自动创建；有基线返回对比明细；文件数进度事件）
 #[tauri::command]
-pub async fn scan_disk_growth(drive: String, max_change_entries: Option<usize>) -> Result<crate::growth::DiskScanAndAnalyzeResponse, String> {
-    tauri::async_runtime::spawn_blocking(move || crate::growth::scan_disk_growth(&drive, max_change_entries))
-        .await
-        .map_err(|e| format!("全盘分析任务失败: {}", e))?
+pub async fn scan_disk_growth(app: tauri::AppHandle, drive: String, max_change_entries: Option<usize>) -> Result<crate::growth::DiskScanAndAnalyzeResponse, String> {
+    use tauri::Emitter;
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::growth::scan_disk_growth_with_progress(&drive, max_change_entries, &|files| {
+            let _ = app.emit("disk-growth:progress", serde_json::json!({ "filesScanned": files }));
+        })
+    })
+    .await
+    .map_err(|e| format!("全盘分析任务失败: {}", e))?
 }
 
 #[tauri::command]
@@ -209,13 +221,18 @@ pub async fn save_disk_growth_html(
     Ok(Some(output_path.to_string_lossy().into_owned()))
 }
 
-/// 大文件扫描（阈值过滤 + Top 200 + 可取消）
+/// 大文件扫描（阈值过滤 + Top 200 + 可取消 + 进度事件）
 #[tauri::command]
-pub async fn scan_large_files(root: String, min_size: Option<u64>) -> Result<crate::bigfiles::LargeFileReport, String> {
+pub async fn scan_large_files(app: tauri::AppHandle, root: String, min_size: Option<u64>) -> Result<crate::bigfiles::LargeFileReport, String> {
+    use tauri::Emitter;
     let min = min_size.unwrap_or(100 * 1024 * 1024); // 默认 100MB
-    tauri::async_runtime::spawn_blocking(move || crate::bigfiles::scan_large_files(&root, min))
-        .await
-        .map_err(|e| format!("扫描失败: {}", e))
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::bigfiles::scan_large_files_with_progress(&root, min, &|scanned| {
+            let _ = app.emit("bigfiles:progress", serde_json::json!({ "scannedFiles": scanned }));
+        })
+    })
+    .await
+    .map_err(|e| format!("扫描失败: {}", e))
 }
 
 /// 取消大文件扫描
@@ -486,10 +503,17 @@ pub async fn scan_orphan_dirs() -> Result<crate::cleaner::OrphanScan, String> {
 
 /// 深度扫描：19 类全分区文件级匹配（可取消，分钟级耗时）
 #[tauri::command]
-pub async fn scan_deep_junk_files() -> Result<crate::cleaner::deep_junk::DeepScanResult, String> {
-    tauri::async_runtime::spawn_blocking(crate::cleaner::deep_junk::scan)
-        .await
-        .map_err(|e| format!("扫描失败: {}", e))
+pub async fn scan_deep_junk_files(app: tauri::AppHandle) -> Result<crate::cleaner::deep_junk::DeepScanResult, String> {
+    use tauri::Emitter;
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::cleaner::deep_junk::scan_filtered_with_progress(None, &|cat, (done, total)| {
+            let _ = app.emit("deep-junk:progress", serde_json::json!({
+                "category": cat, "done": done, "total": total,
+            }));
+        })
+    })
+    .await
+    .map_err(|e| format!("扫描失败: {}", e))
 }
 
 /// 取消深度扫描

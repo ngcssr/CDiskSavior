@@ -279,6 +279,11 @@ pub struct DiskScanAndAnalyzeResponse {
 
 /// 全盘空间变化分析：无基线时自动创建基线（首轮为空报告），否则对比并返回明细
 pub fn scan_disk_growth(drive: &str, max_change_entries: Option<usize>) -> Result<DiskScanAndAnalyzeResponse, String> {
+    scan_disk_growth_with_progress(drive, max_change_entries, &|_| {})
+}
+
+/// 带进度回调的全盘变化分析（每 1000 个文件回调一次已扫描数）
+pub fn scan_disk_growth_with_progress(drive: &str, max_change_entries: Option<usize>, on_progress: &dyn Fn(usize)) -> Result<DiskScanAndAnalyzeResponse, String> {
     use std::sync::atomic::Ordering;
     GROWTH_CANCELLED.store(false, Ordering::Relaxed);
     let t0 = std::time::Instant::now();
@@ -287,7 +292,7 @@ pub fn scan_disk_growth(drive: &str, max_change_entries: Option<usize>) -> Resul
     // 无基线：先建基线，返回空报告（与 UI 的"创建基线"流程一致）
     if !has_baseline(&drive_root) {
         create_snapshot(&drive_root)?;
-        let (files, _) = count_files(&drive_root);
+        let (files, _) = count_files_with_progress(&drive_root, on_progress);
         return Ok(DiskScanAndAnalyzeResponse {
             growth: GrowthReport { entries: vec![], total_growth: 0, baseline_at: 0, time_span_hours: 0.0, has_baseline: false },
             total_files_scanned: files,
@@ -338,7 +343,7 @@ pub fn scan_disk_growth(drive: &str, max_change_entries: Option<usize>) -> Resul
     entries.sort_by(|a, b| b.diff.cmp(&a.diff));
     let max = max_change_entries.unwrap_or(100).clamp(10, 2000);
     entries.truncate(max);
-    let (files, _) = count_files(&drive_root);
+    let (files, _) = count_files_with_progress(&drive_root, on_progress);
     Ok(DiskScanAndAnalyzeResponse {
         growth: GrowthReport { entries, total_growth, baseline_at: snap.created_at, time_span_hours: span_hours, has_baseline: true },
         total_files_scanned: files,
@@ -347,13 +352,20 @@ pub fn scan_disk_growth(drive: &str, max_change_entries: Option<usize>) -> Resul
     })
 }
 
-/// 统计文件数（可取消；用于进度展示）
+/// 统计文件数（可取消 + 进度回调；每 1000 个文件回调一次）
 fn count_files(root: &str) -> (usize, bool) {
+    count_files_with_progress(root, &|_| {})
+}
+
+fn count_files_with_progress(root: &str, on_progress: &dyn Fn(usize)) -> (usize, bool) {
     use std::sync::atomic::Ordering;
     let mut n = 0usize;
     for entry in jwalk::WalkDir::new(root).follow_links(false).into_iter().flatten() {
         if GROWTH_CANCELLED.load(Ordering::Relaxed) { return (n, true); }
-        if entry.file_type().is_file() { n += 1; }
+        if entry.file_type().is_file() {
+            n += 1;
+            if n % 1000 == 0 { on_progress(n); }
+        }
     }
     (n, false)
 }

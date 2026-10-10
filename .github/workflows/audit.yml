@@ -1,0 +1,55 @@
+# cargo audit 依赖安全审计（合并设计 R7：cargo audit 入 CI）
+#
+# 触发：push 到 master、每周一 03:00 UTC 定时、手动触发。
+# 失败策略：发现漏洞即失败（exit code != 0），报告作为工件上传保留 30 天。
+name: cargo-audit
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "app/src-tauri/Cargo.toml"
+      - "app/src-tauri/Cargo.lock"
+      - ".github/workflows/audit.yml"
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: app/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-audit-${{ hashFiles('app/src-tauri/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-audit-
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+        # 首次安装较慢（~10min）；有缓存则秒级
+
+      - name: Run cargo audit
+        run: cargo audit --json > audit-report.json
+        continue-on-error: true
+
+      - name: Run cargo audit (summary gate)
+        run: cargo audit
+
+      - name: Upload audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-audit-report
+          path: app/src-tauri/audit-report.json
+          retention-days: 30

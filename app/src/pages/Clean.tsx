@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { api_clean } from "../api/commands";
+import { listen } from "@tauri-apps/api/event";
 import {
   Trash2, RefreshCw, AlertTriangle, FolderX, Layers, X, MessageSquare,
 } from "lucide-react";
@@ -54,6 +55,7 @@ export default function Clean() {
   // 深度扫描状态
   const [deep, setDeep] = useState<import("../api/commands").DeepScanResult | null>(null);
   const [deepScanning, setDeepScanning] = useState(false);
+  const [deepProgress, setDeepProgress] = useState<{ category: string; done: number; total: number } | null>(null);
   const [deepSelected, setDeepSelected] = useState<Set<string>>(new Set());
   // 社交缓存状态
   const [social, setSocial] = useState<import("../api/commands").SocialScan | null>(null);
@@ -83,6 +85,14 @@ export default function Clean() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
+  // 订阅深度扫描分类级进度事件
+  useEffect(() => {
+    const un = listen<{ category: string; done: number; total: number }>("deep-junk:progress", (e) => {
+      setDeepProgress(e.payload);
+    });
+    return () => { un.then((f) => f()); };
+  }, []);
+
   const toggle = (id: string) => {
     setSelected((s) => {
       const n = new Set(s);
@@ -104,6 +114,7 @@ export default function Clean() {
   // ===== 深度扫描状态与操作 =====
   const runDeepScan = async () => {
     setDeepScanning(true);
+    setDeepProgress(null);
     setDeep(null);
     setDeepSelected(new Set());
     setError(null);
@@ -114,6 +125,7 @@ export default function Clean() {
       setError(e?.message ?? String(e));
     } finally {
       setDeepScanning(false);
+      setDeepProgress(null);
     }
   };
 
@@ -359,6 +371,12 @@ export default function Clean() {
           {deepScanning && (
             <div className="pulse rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] px-4 py-3 text-sm text-[var(--color-text-secondary)]">
               正在全分区深度扫描（19 类，分钟级）… 可随时取消
+              {deepProgress && deepProgress.total > 0 && (
+                <div className="mt-1 text-xs">
+                  <span className="font-num">{deepProgress.done}/{deepProgress.total}</span>
+                  <span className="ml-2">{deepProgress.category}</span>
+                </div>
+              )}
             </div>
           )}
 

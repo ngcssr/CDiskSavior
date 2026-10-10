@@ -1,6 +1,8 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { api_insight, api_settings, type LargeFileReport } from "../api/commands";
-import { ChevronRight, RefreshCw, Folder, TrendingUp, FileWarning, FolderOpen, ExternalLink, X } from "lucide-react";
+import { listen } from "@tauri-apps/api/event";
+import { ChevronRight, RefreshCw, TrendingUp, FileWarning, FolderOpen, ExternalLink, X } from "lucide-react";
+import { hierarchy, treemap, treemapSquarify } from "d3-hierarchy";
 
 type TreeNode = {
   name: string; path: string; size: number; isDir: boolean; hasChildren: boolean;
@@ -22,6 +24,87 @@ function sizeColor(ratio: number): string {
   return "#16a34a";
 }
 
+/** d3-hierarchy 真 TreeMap（面积 = 大小，点击下钻） */
+function TreeMapView({ tree, onDrill }: { tree: TreeNode; onDrill: (n: TreeNode) => void }) {
+  const W = 1000;
+  const H = 420;
+  const leaves = useMemo(() => {
+    const children = (tree.children ?? []).filter((c) => c.size > 0);
+    if (children.length === 0) return [];
+    const root = hierarchy({ name: tree.name, size: 0, children } as any)
+      .sum((d: any) => d.size)
+      .sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
+    const layout = treemap<any>()
+      .size([W, H])
+      .tile(treemapSquarify.ratio(1.2))
+      .paddingInner(3)
+      .paddingOuter(2);
+    return layout(root).leaves();
+  }, [tree]);
+
+  if (leaves.length === 0) {
+    return <div className="py-6 text-center text-sm text-[var(--color-text-secondary)]">当前目录无可视化数据</div>;
+  }
+
+  const total = tree.size || 1;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full select-none" role="img" aria-label="磁盘空间 TreeMap">
+      {leaves.map((leaf) => {
+        const d = leaf.data as any;
+        const w = leaf.x1 - leaf.x0;
+        const h = leaf.y1 - leaf.y0;
+        const ratio = (leaf.value ?? 0) / total;
+        const showText = w > 70 && h > 30;
+        const showSize = w > 90 && h > 48;
+        return (
+          <g
+            key={d.path}
+            onClick={() => d.isDir && onDrill(d as TreeNode)}
+            className={d.isDir ? "cursor-pointer" : ""}
+          >
+            <title>{`${d.path}\n${formatSize(leaf.value ?? 0)}（${(ratio * 100).toFixed(1)}%）`}</title>
+            <rect
+              x={leaf.x0}
+              y={leaf.y0}
+              width={Math.max(w, 0)}
+              height={Math.max(h, 0)}
+              rx={4}
+              fill={sizeColor(ratio)}
+              fillOpacity={d.isDir ? 0.85 : 0.45}
+              stroke="var(--color-surface)"
+              strokeWidth={1.5}
+              className="transition-all hover:fillOpacity-100 hover:brightness-110"
+            />
+            {showText && (
+              <text
+                x={leaf.x0 + 6}
+                y={leaf.y0 + 16}
+                fontSize={12}
+                fill="#fff"
+                style={{ pointerEvents: "none", textShadow: "0 1px 2px rgba(0,0,0,.45)" }}
+              >
+                {d.name.length > Math.floor(w / 8) ? `${d.name.slice(0, Math.max(Math.floor(w / 8) - 1, 2))}…` : d.name}
+              </text>
+            )}
+            {showSize && (
+              <text
+                x={leaf.x0 + 6}
+                y={leaf.y0 + 32}
+                fontSize={11}
+                fill="#fff"
+                fillOpacity={0.85}
+                style={{ pointerEvents: "none", textShadow: "0 1px 2px rgba(0,0,0,.45)" }}
+              >
+                {formatSize(leaf.value ?? 0)}
+              </text>
+            )}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
 export default function Insight() {
   const [tree, setTree] = useState<TreeNode | null>(null);
   const [stack, setStack] = useState<TreeNode[]>([]); // 面包屑路径
@@ -39,6 +122,23 @@ export default function Insight() {
   const [bigfile, setBigfile] = useState<LargeFileReport | null>(null);
   const [bigfileLoading, setBigfileLoading] = useState(false);
   const [bigfileMin, setBigfileMin] = useState(100); // MB
+  // 扫描进度（Tauri 事件）
+  const [bigfileProgress, setBigfileProgress] = useState(0);
+  const [growthProgress, setGrowthProgress] = useState(0);
+
+  // 订阅后端进度事件
+  useEffect(() => {
+    const u1 = listen<{ scannedFiles: number }>("bigfiles:progress", (e) => {
+      setBigfileProgress(e.payload.scannedFiles);
+    });
+    const u2 = listen<{ filesScanned: number }>("disk-growth:progress", (e) => {
+      setGrowthProgress(e.payload.filesScanned);
+    });
+    return () => {
+      u1.then((f) => f());
+      u2.then((f) => f());
+    };
+  }, []);
 
   const scan = useCallback(async (path: string, pushToStack: boolean) => {
     setLoading(true);
@@ -81,10 +181,11 @@ export default function Insight() {
 
   const createBaseline = async () => {
     setGrowthLoading(true);
+    setGrowthProgress(0);
     try {
-      await api_insight.create_disk_snapshot("C:\\");
+      const resp = await api_insight.scan_disk_growth("C:\\");
       setHasBaseline(true);
-      setGrowth(await api_insight.compare_disk_growth("C:\\"));
+      setGrowth(resp.growth);
     } catch (e: any) {
       setError(e?.message ?? String(e));
     } finally {
@@ -94,9 +195,11 @@ export default function Insight() {
 
   const runGrowth = async () => {
     setGrowthLoading(true);
+    setGrowthProgress(0);
     setError(null);
     try {
-      setGrowth(await api_insight.compare_disk_growth("C:\\"));
+      const resp = await api_insight.scan_disk_growth("C:\\");
+      setGrowth(resp.growth);
     } catch (e: any) {
       setError(e?.message ?? String(e));
     } finally {
@@ -106,6 +209,7 @@ export default function Insight() {
 
   const runBigfile = async () => {
     setBigfileLoading(true);
+    setBigfileProgress(0);
     setError(null);
     try {
       setBigfile(await api_insight.scan_large_files("C:\\", bigfileMin * 1024 * 1024));
@@ -189,44 +293,12 @@ export default function Insight() {
 
         {tab === "tree" && tree && !loading && (
           <>
-            {/* TreeMap 简化版：水平条形图（P3 阶段；d3-hierarchy 在 P5 接入） */}
+            {/* d3-hierarchy 真 TreeMap（面积=大小，点击下钻） */}
             <div className="mb-6">
               <h3 className="mb-2 text-xs font-semibold text-[var(--color-text-secondary)]">
-                空间分布（按大小降序）
+                空间分布 TreeMap（面积 = 大小，点击目录下钻）
               </h3>
-              <div className="space-y-1">
-                {tree.children?.filter((c) => c.size > 0)
-                  .slice(0, 30)
-                  .map((child) => {
-                    const ratio = tree.size > 0 ? child.size / tree.size : 0;
-                    return (
-                      <div
-                        key={child.path}
-                        onClick={() => drillInto(child)}
-                        className="group flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-[var(--color-surface-hover)]"
-                      >
-                        <div className="w-5">
-                          {child.isDir ? (
-                            <Folder size={14} className="text-[var(--color-primary)]" />
-                          ) : null}
-                        </div>
-                        <div className="w-48 truncate text-sm">{child.name}</div>
-                        <div className="relative h-5 flex-1 overflow-hidden rounded bg-[var(--color-surface-hover)]">
-                          <div
-                            className="h-full rounded transition-all"
-                            style={{ width: `${Math.max(ratio * 100, 2)}%`, background: sizeColor(ratio) }}
-                          />
-                        </div>
-                        <div className="w-20 text-right text-xs tabular-nums text-[var(--color-text-secondary)]">
-                          {formatSize(child.size)}
-                        </div>
-                        <div className="w-12 text-right text-xs tabular-nums text-[var(--color-text-secondary)]">
-                          {(ratio * 100).toFixed(1)}%
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
+              <TreeMapView tree={tree} onDrill={drillInto} />
             </div>
 
             {/* 总计 */}
@@ -306,7 +378,18 @@ export default function Insight() {
                 </button>
               </div>
             ) : growthLoading ? (
-              <div className="pulse p-8 text-center text-sm text-[var(--color-text-secondary)]">对比计算中…</div>
+              <div className="pulse p-8 text-center text-sm text-[var(--color-text-secondary)]">
+                对比计算中…
+                {growthProgress > 0 && (
+                  <div className="mt-1 font-num text-xs">已扫描 {growthProgress.toLocaleString()} 个文件</div>
+                )}
+                <button
+                  onClick={() => api_insight.cancel_disk_growth_scan()}
+                  className="btn mt-3 flex items-center gap-1 text-xs"
+                >
+                  <X size={12} /> 取消扫描
+                </button>
+              </div>
             ) : growth ? (
               <>
                 <div className="mb-3 flex items-center justify-between rounded-xl bg-[var(--color-surface-hover)] px-4 py-2 text-sm">
@@ -395,6 +478,9 @@ export default function Insight() {
             {bigfileLoading && (
               <div className="pulse p-8 text-center text-sm text-[var(--color-text-secondary)]">
                 正在扫描 C:\ 大文件（{bigfileMin >= 1024 ? "1 GB" : `${bigfileMin} MB`} 以上）…
+                {bigfileProgress > 0 && (
+                  <div className="mt-1 font-num text-xs">已扫描 {bigfileProgress.toLocaleString()} 个文件</div>
+                )}
               </div>
             )}
 

@@ -37,6 +37,11 @@ pub fn cancel() {
 
 /// 扫描大文件（min_size 字节以上的文件，降序 Top 200）
 pub fn scan_large_files(root: &str, min_size: u64) -> LargeFileReport {
+    scan_large_files_with_progress(root, min_size, &|_| {})
+}
+
+/// 带进度回调的大文件扫描（每 2000 个文件回调一次已扫描数）
+pub fn scan_large_files_with_progress(root: &str, min_size: u64, on_progress: &dyn Fn(usize)) -> LargeFileReport {
     CANCELLED.store(false, Ordering::Relaxed);
     let t0 = std::time::Instant::now();
     let root_path = Path::new(root);
@@ -54,6 +59,7 @@ pub fn scan_large_files(root: &str, min_size: u64) -> LargeFileReport {
         }
         if !entry.file_type().is_file() { continue; }
         scanned += 1;
+        if scanned % 2000 == 0 { on_progress(scanned); }
         let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
         if size < min_size { continue; }
         total_found += 1;

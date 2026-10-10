@@ -313,19 +313,28 @@ pub fn scan() -> DeepScanResult {
 
 /// 常规垃圾扫描（scan_junk_files）：可选分类名过滤
 pub fn scan_filtered(category_names: Option<Vec<String>>) -> DeepScanResult {
+    scan_filtered_with_progress(category_names, &|_, _| {})
+}
+
+/// 带进度回调的分类扫描（每完成一个分类回调 (分类名, 已完成数/总数)）
+pub fn scan_filtered_with_progress(category_names: Option<Vec<String>>, on_progress: &dyn Fn(&str, (usize, usize))) -> DeepScanResult {
     CANCELLED.store(false, Ordering::Relaxed);
     let t0 = std::time::Instant::now();
     let mut out = Vec::new();
     let (mut total_size, mut total_files) = (0u64, 0usize);
+    let cats = categories();
+    let selected: Vec<&CatDef> = cats
+        .iter()
+        .filter(|c| category_names.as_ref().is_none_or(|names| names.iter().any(|n| n == c.id || n == c.name)))
+        .collect();
+    let total_cats = selected.len();
 
-    for cat in categories() {
-        if let Some(names) = &category_names {
-            if !names.iter().any(|n| n == cat.id || n == cat.name) { continue; }
-        }
+    for (idx, cat) in selected.into_iter().enumerate() {
         if CANCELLED.load(Ordering::Relaxed) {
             return DeepScanResult { categories: out, total_size, total_files, duration_ms: t0.elapsed().as_millis() as u64, cancelled: true };
         }
-        let (size, count, top) = scan_one(&cat, false);
+        on_progress(cat.name, (idx, total_cats));
+        let (size, count, top) = scan_one(cat, false);
 
         if size > 0 {
             total_size += size;
@@ -337,6 +346,7 @@ pub fn scan_filtered(category_names: Option<Vec<String>>) -> DeepScanResult {
             });
         }
     }
+    on_progress("完成", (total_cats, total_cats));
 
     out.sort_by(|a, b| b.size.cmp(&a.size));
     DeepScanResult { categories: out, total_size, total_files, duration_ms: t0.elapsed().as_millis() as u64, cancelled: false }
