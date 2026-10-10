@@ -94,8 +94,8 @@ pub fn run(ids: &[String]) -> CleanupReport {
     let mut errors = Vec::new();
     let mut skipped = Vec::new();
 
-    // 获取清理前剩余空间
-    let free_before = get_free_space("C");
+    // 获取清理前剩余空间（所有本地盘汇总，不硬编码盘符——V4 教训）
+    let free_before = total_free_all_drives();
 
     for id in ids {
         // 第 0 层：id 必须在允许集合中
@@ -138,7 +138,7 @@ pub fn run(ids: &[String]) -> CleanupReport {
         }
     }
 
-    let free_after = get_free_space("C:");
+    let free_after = total_free_all_drives();
 
     CleanupReport {
         freed,
@@ -198,15 +198,7 @@ fn dir_size(path: &std::path::Path) -> u64 {
     total
 }
 
-fn get_free_space(drive: &str) -> u64 {
-    use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
-    let root = format!("{}:\\", drive);
-    let wide: Vec<u16> = root.encode_utf16().chain(std::iter::once(0)).collect();
-    let mut free: u64 = 0;
-    let mut total: u64 = 0;
-    let mut total_free: u64 = 0;
-    unsafe {
-        GetDiskFreeSpaceExW(wide.as_ptr(), &mut free, &mut total, &mut total_free);
-    }
-    free
+/// 汇总所有本地固定盘的剩余空间（替代硬编码盘符）
+fn total_free_all_drives() -> u64 {
+    crate::scan::get_drives().iter().map(|d| d.free).sum()
 }

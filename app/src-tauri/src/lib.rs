@@ -92,14 +92,18 @@ pub fn run() {
             slim_commands::delete_ai_model
         ])
         .setup(|_app| {
-            // R8: 单实例互斥（第二个实例直接退出）
+            // R8: 单实例互斥（修复：句柄必须持有到进程退出，第二个实例直接 exit）
             match state::SingleInstance::new() {
-                Ok(_) => Ok(()),
-                Err(false) => {
-                    // 已有实例在运行——非错误退出（正常路径）
-                    // Tauri 还没启动窗口，直接退出即可
-                    eprintln!("CDisk Savior 已在运行中");
+                Ok(handle) => {
+                    // 关键：forget 持有互斥体直到进程退出。
+                    // 此前 Ok(_) 直接 drop → 互斥体立刻释放 → 保护完全失效。
+                    std::mem::forget(handle);
                     Ok(())
+                }
+                Err(false) => {
+                    // 已有实例在运行——立即退出本进程（否则双实例并行写状态）
+                    eprintln!("CDisk Savior 已在运行中，第二实例退出");
+                    std::process::exit(0);
                 }
                 Err(true) => Ok(()), // 创建失败，保守放行
             }

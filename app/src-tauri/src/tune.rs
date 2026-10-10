@@ -37,7 +37,7 @@ pub fn list_items() -> Vec<StartupItem> {
         if let Ok(sub) = RegKey::predef(hive).open_subkey_with_flags(RUN_KEY, KEY_READ) {
             for (name, value) in sub.enum_values().flatten() {
                 let enabled = read_enabled(hive, APPROVED_RUN, &name);
-                let cmd_str = String::from_utf8_lossy(&value.bytes).to_string();
+                let cmd_str = decode_reg_string(&value.bytes);
                 let (advice, reason) = advise(&name, &cmd_str);
                 out.push(StartupItem {
                     id: format!("{}::{}", kind, name),
@@ -132,6 +132,16 @@ fn write_enabled(hive: isize, path: &str, name: &str, enabled: bool) -> Result<(
     Ok(())
 }
 
+/// 解码注册表字符串值（winreg 返回 UTF-16LE 字节，from_utf8_lossy 会乱码）
+fn decode_reg_string(bytes: &[u8]) -> String {
+    let units: Vec<u16> = bytes
+        .chunks_exact(2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .collect();
+    let end = units.iter().position(|&u| u == 0).unwrap_or(units.len());
+    String::from_utf16_lossy(&units[..end])
+}
+
 /// 简化的建议引擎
 fn advise(name: &str, command: &str) -> (&'static str, &'static str) {
     let lower = name.to_lowercase();
@@ -151,4 +161,30 @@ fn advise(name: &str, command: &str) -> (&'static str, &'static str) {
         return ("disable", "OneDrive 自启，手动启动即可");
     }
     ("neutral", "根据使用习惯决定")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decode_reg_string_utf16() {
+        let s = "C:\\Program Files\\Test 中文";
+        let mut bytes: Vec<u8> = Vec::new();
+        for u in s.encode_utf16() {
+            bytes.extend_from_slice(&u.to_le_bytes());
+        }
+        bytes.push(0); bytes.push(0);
+        assert_eq!(decode_reg_string(&bytes), s, "UTF-16 解码应无损");
+    }
+
+    #[test]
+    fn decode_reg_string_ascii() {
+        let s = "notepad.exe";
+        let mut bytes: Vec<u8> = Vec::new();
+        for u in s.encode_utf16() {
+            bytes.extend_from_slice(&u.to_le_bytes());
+        }
+        assert_eq!(decode_reg_string(&bytes), s);
+    }
 }
