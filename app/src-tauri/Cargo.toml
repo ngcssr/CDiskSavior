@@ -47,5 +47,9 @@ windows-sys = { version = "0.59", features = [               # Win32 API（disk-
 # 显式启用 std feature 跳过探测（CARGO_FEATURE_STD 直接 emit has_std）。
 indexmap = { version = "1", features = ["std"] }
 
+[features]
+# 生产构建必须启用：内嵌 frontendDist 资源；缺失时二进制回退 devUrl（localhost 拒绝连接）
+custom-protocol = ["tauri/custom-protocol"]
+
 [profile.release]
 opt-level = 1
