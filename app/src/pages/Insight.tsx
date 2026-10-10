@@ -28,13 +28,22 @@ export default function Insight() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const scan = useCallback(async (path: string) => {
+  const scan = useCallback(async (path: string, pushToStack: boolean) => {
     setLoading(true);
     setError(null);
     try {
       const result = await api_insight.scan_drive(path);
       setTree(result);
-      setStack([{ ...result, name: path }]);
+      if (pushToStack) {
+        // 下钻：压栈（面包屑累积）
+        setStack((s) => [...s, { ...result, name: path }]);
+      } else {
+        // 回退/刷新：截断到该路径
+        setStack((s) => {
+          const idx = s.findIndex((n) => n.path === path);
+          return idx >= 0 ? s.slice(0, idx + 1) : [{ ...result, name: path }];
+        });
+      }
     } catch (e: any) {
       setError(e?.message ?? String(e));
     } finally {
@@ -44,20 +53,18 @@ export default function Insight() {
 
   // 首次加载：扫描 C:\
   useEffect(() => {
-    scan("C:\\");
+    scan("C:\\", false);
   }, [scan]);
 
   const drillInto = (node: TreeNode) => {
     if (!node.isDir) return;
-    scan(node.path);
+    scan(node.path, true);
   };
 
   const goBack = (index: number) => {
-    if (index < 0) {
-      scan("C:\\");
-    } else {
-      const target = stack[index];
-      scan(target.path);
+    const target = stack[index];
+    if (target) {
+      scan(target.path, false);
     }
   };
 
@@ -66,7 +73,7 @@ export default function Insight() {
       {/* 工具栏 */}
       <div className="flex items-center gap-2 border-b border-[var(--color-line)] px-4 py-3">
         <button
-          onClick={() => scan(stack[stack.length - 1]?.path ?? "C:\\")}
+          onClick={() => scan(stack[stack.length - 1]?.path ?? "C:\\", false)}
           disabled={loading}
           className="flex items-center gap-1.5 rounded-lg bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
         >

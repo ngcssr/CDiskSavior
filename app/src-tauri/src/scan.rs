@@ -171,10 +171,14 @@ pub fn scan_directory(root: &str) -> Result<TreeNode, String> {
     Ok(tree)
 }
 
-/// 递归构建目录树
-fn build_tree(path: &std::path::Path, node: &mut TreeNode, depth: usize, max_depth: usize) {
+/// 递归构建目录树——返回子树总大小（单次遍历，消除冗余 dir_size 调用）
+///
+/// 性能优化：此前每个子目录先 dir_size()（全树遍历）再 build_tree()（又遍历子项），
+/// 子树被走两遍。现在 build_tree 自底向上返回大小，每目录只走一次。
+fn build_tree(path: &std::path::Path, node: &mut TreeNode, depth: usize, max_depth: usize) -> u64 {
+    // 超过显示深度：只算大小（快速路径，不建节点）
     if depth >= max_depth {
-        return;
+        return dir_size(path);
     }
 
     let mut total_size: u64 = 0;
@@ -197,15 +201,10 @@ fn build_tree(path: &std::path::Path, node: &mut TreeNode, depth: usize, max_dep
 
         if ft.is_dir() {
             let mut child = TreeNode::new_dir(&name, &path_str);
-            // 递归计算子目录大小
-            let size = dir_size(&entry.path());
+            // 递归构建子树 + 获取大小（单次遍历）
+            let size = build_tree(&entry.path(), &mut child, depth + 1, max_depth);
             child.size = size;
             total_size += size;
-
-            // 递归构建子树
-            if depth + 1 < max_depth {
-                build_tree(&entry.path(), &mut child, depth + 1, max_depth);
-            }
             children.push(child);
         } else if ft.is_file() {
             let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
@@ -225,6 +224,7 @@ fn build_tree(path: &std::path::Path, node: &mut TreeNode, depth: usize, max_dep
     node.size = total_size;
     node.has_children = !children.is_empty();
     node.children = children;
+    total_size
 }
 
 /// 计算目录大小（不跟随链接）

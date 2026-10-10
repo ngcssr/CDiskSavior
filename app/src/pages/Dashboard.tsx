@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api_dashboard } from "../api/commands";
-import { HardDrive, MemoryStick } from "lucide-react";
+import { HardDrive, MemoryStick, RefreshCw } from "lucide-react";
 
 type DriveInfo = { mount: string; label: string; total: number; free: number; fs: string; kind: string };
 
@@ -17,31 +17,49 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [d, m] = await Promise.all([
-          api_dashboard.get_drives(),
-          api_dashboard.memory_report(),
-        ]);
-        setDrives(d);
-        setMem(m.overview);
-      } catch (e: any) {
-        setError(e?.message ?? String(e));
-      } finally {
-        setLoading(false);
-      }
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [d, m] = await Promise.all([
+        api_dashboard.get_drives(),
+        api_dashboard.memory_report(),
+      ]);
+      setDrives(d);
+      setMem(m.overview);
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setLoading(false);
     }
-    load();
-  }, []);
+  };
 
-  if (loading) return <div className="p-10 text-[var(--color-text-secondary)]">加载中…</div>;
-  if (error) return <div className="p-10 text-[var(--color-danger)]">错误：{error}</div>;
+  useEffect(() => { load(); }, []);
 
   return (
     <div className="p-6">
-      <h1 className="mb-6 text-2xl font-bold">总览</h1>
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl font-bold">总览</h1>
+        <button
+          onClick={load}
+          disabled={loading}
+          className="flex items-center gap-1.5 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-1.5 text-sm disabled:opacity-50"
+        >
+          <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+          刷新
+        </button>
+      </div>
 
+      {error && (
+        <div className="mb-4 rounded-xl border border-[var(--color-danger)]/30 bg-[var(--color-danger-bg-soft)] px-4 py-3 text-sm text-[var(--color-danger-text)]">
+          {error}
+        </div>
+      )}
+
+      {loading && drives.length === 0 ? (
+        <div className="p-10 text-center text-[var(--color-text-secondary)]">加载中…</div>
+      ) : (
+        <>
       {/* 磁盘卡片 */}
       <section className="mb-8">
         <h2 className="mb-3 text-sm font-semibold text-[var(--color-text-secondary)]">磁盘</h2>
@@ -98,6 +116,8 @@ export default function Dashboard() {
             </div>
           </div>
         </section>
+      )}
+        </>
       )}
     </div>
   );
