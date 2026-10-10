@@ -82,6 +82,21 @@ pub async fn compare_disk_growth(drive: String) -> Result<crate::growth::GrowthR
         .map_err(|e| format!("对比失败: {}", e))?
 }
 
+/// 大文件扫描（阈值过滤 + Top 200 + 可取消）
+#[tauri::command]
+pub async fn scan_large_files(root: String, min_size: Option<u64>) -> Result<crate::bigfiles::LargeFileReport, String> {
+    let min = min_size.unwrap_or(100 * 1024 * 1024); // 默认 100MB
+    tauri::async_runtime::spawn_blocking(move || crate::bigfiles::scan_large_files(&root, min))
+        .await
+        .map_err(|e| format!("扫描失败: {}", e))
+}
+
+/// 取消大文件扫描
+#[tauri::command]
+pub fn cancel_large_file_scan() {
+    crate::bigfiles::cancel();
+}
+
 /// 是否已有基线快照
 #[tauri::command]
 pub fn has_disk_snapshot(drive: String) -> bool {
@@ -383,6 +398,68 @@ pub fn verify_integrity() -> Result<serde_json::Value, String> {
         "status": "ok",
         "modules": ["M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8"],
         "version": "0.1.0"
+    }))
+}
+
+/// 旧版 disk-butler 数据导入（合并设计 §3.1 旧名迁移）
+///
+/// 旧标识符 com.diskbutler.app 的 appDataDir 中 scan-cache-*.json / cleanup-stats.json
+/// 存在则导入新数据目录；同名文件已存在时保留新值（不覆盖）。
+#[tauri::command]
+pub fn migrate_legacy_portable_data(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+
+    let legacy_dir = std::env::var_os("APPDATA")
+        .map(std::path::PathBuf::from)
+        .map(|p| p.join("com.diskbutler.app"));
+    let legacy_dir = match legacy_dir {
+        Some(d) if d.is_dir() => d,
+        _ => {
+            return Ok(serde_json::json!({
+                "found": false,
+                "imported": [],
+                "message": "未找到旧版数据目录（com.diskbutler.app）"
+            }))
+        }
+    };
+
+    let new_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("无法定位数据目录: {}", e))?;
+    std::fs::create_dir_all(&new_dir).map_err(|e| format!("创建数据目录失败: {}", e))?;
+
+    let mut imported: Vec<String> = Vec::new();
+    let mut skipped: Vec<String> = Vec::new();
+
+    // scan-cache-*.json + cleanup-stats.json（旧版格式沿用，直接复制）
+    let patterns = ["scan-cache-", "cleanup-stats.json"];
+    if let Ok(entries) = std::fs::read_dir(&legacy_dir) {
+        for entry in entries.flatten() {
+            let file_name = entry.file_name();
+            let name = file_name.to_string_lossy().to_string();
+            let matches = name.starts_with(patterns[0]) && name.ends_with(".json")
+                || name == patterns[1];
+            if !matches {
+                continue;
+            }
+            let target = new_dir.join(&name);
+            if target.exists() {
+                skipped.push(name);
+                continue;
+            }
+            match std::fs::copy(entry.path(), &target) {
+                Ok(_) => imported.push(name),
+                Err(e) => skipped.push(format!("{}（复制失败: {}）", name, e)),
+            }
+        }
+    }
+
+    Ok(serde_json::json!({
+        "found": true,
+        "legacy_dir": legacy_dir.to_string_lossy(),
+        "imported": imported,
+        "skipped": skipped,
     }))
 }
 

@@ -437,6 +437,7 @@ dependencies = [
  "junction",
  "jwalk",
  "log",
+ "regex",
  "serde",
  "serde_json",
  "tauri",

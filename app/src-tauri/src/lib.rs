@@ -87,6 +87,7 @@ pub fn run() {
             commands::get_data_directory,
             commands::format_size,
             commands::verify_integrity,
+            commands::migrate_legacy_portable_data,
             // M5 系统瘦身（P5 实现）
             slim_commands::get_system_slim_status,
             slim_commands::enable_hibernation,
