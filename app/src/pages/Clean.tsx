@@ -29,6 +29,18 @@ const SAFETY_STYLE: Record<string, { color: string; label: string }> = {
   keep: { color: "var(--color-danger)", label: "保留" },
 };
 
+/** 类别展示顺序与名称（与后端 46 项清单对应） */
+const CATEGORY_ORDER = ["system", "update", "browser", "dev", "app", "logs", "recycle"] as const;
+const CATEGORY_NAMES: Record<string, string> = {
+  system: "系统与错误报告",
+  update: "更新与组件",
+  browser: "浏览器缓存",
+  dev: "开发工具缓存",
+  app: "应用缓存",
+  logs: "日志与杂项",
+  recycle: "回收站",
+};
+
 export default function Clean() {
   const [items, setItems] = useState<CleanupItem[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -64,6 +76,16 @@ export default function Clean() {
     setSelected((s) => {
       const n = new Set(s);
       if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+  };
+
+  const toggleGroup = (cat: string) => {
+    setSelected((s) => {
+      const n = new Set(s);
+      const group = items.filter((i) => i.category === cat);
+      const allIn = group.every((i) => n.has(i.id));
+      group.forEach((i) => (allIn ? n.delete(i.id) : n.add(i.id)));
       return n;
     });
   };
@@ -164,34 +186,63 @@ export default function Clean() {
               </button>
             )}
           </div>
-          <div className="space-y-1">
-            {items.map((item) => {
-              const st = SAFETY_STYLE[item.safety] ?? SAFETY_STYLE.safe;
+          {/* 按类别分组展示（46 项合并清单） */}
+          <div className="space-y-4">
+            {CATEGORY_ORDER.map((cat) => {
+              const group = items.filter((i) => i.category === cat);
+              if (group.length === 0) return null;
+              const groupSize = group.reduce((s, i) => s + i.size, 0);
+              const groupSelected = group.filter((i) => selected.has(i.id)).length;
               return (
-                <label
-                  key={item.id}
-                  className={`flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-[var(--color-surface-hover)] ${
-                    selected.has(item.id) ? "bg-[var(--color-primary-soft)]" : ""
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selected.has(item.id)}
-                    onChange={() => toggle(item.id)}
-                    disabled={cleaning}
-                    className="h-4 w-4 accent-[var(--color-primary)]"
-                  />
-                  <div className="flex-1">
+                <div key={cat}>
+                  <div className="mb-1.5 flex items-center justify-between px-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">{item.name}</span>
-                      <span className="rounded-full px-2 py-0.5 text-xs" style={{ background: `${st.color}15`, color: st.color }}>
-                        {st.label}
+                      <span className="text-[12px] font-semibold uppercase tracking-wider text-[var(--color-text-dim)]">
+                        {CATEGORY_NAMES[cat]}
+                      </span>
+                      <span className="text-[11px] text-[var(--color-text-dim)]">
+                        {group.length} 项 · {fmt(groupSize)}
                       </span>
                     </div>
-                    <div className="truncate font-mono text-xs text-[var(--color-text-secondary)]">{item.description}</div>
+                    <button
+                      onClick={() => toggleGroup(cat)}
+                      className="text-[11px] text-[var(--color-primary)] hover:underline"
+                    >
+                      {groupSelected === group.length ? "取消全选" : "全选"}
+                    </button>
                   </div>
-                  <span className="text-sm tabular-nums text-[var(--color-text-secondary)]">{fmt(item.size)}</span>
-                </label>
+                  <div className="space-y-0.5">
+                    {group.map((item) => {
+                      const st = SAFETY_STYLE[item.safety] ?? SAFETY_STYLE.safe;
+                      return (
+                        <label
+                          key={item.id}
+                          className={`flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 hover:bg-[var(--color-surface-hover)] ${
+                            selected.has(item.id) ? "bg-[var(--color-primary-soft)]" : ""
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selected.has(item.id)}
+                            onChange={() => toggle(item.id)}
+                            disabled={cleaning}
+                            className="h-4 w-4 accent-[var(--color-primary)]"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium">{item.name}</span>
+                              <span className="rounded-full px-2 py-0.5 text-xs" style={{ background: `${st.color}15`, color: st.color }}>
+                                {st.label}
+                              </span>
+                            </div>
+                            <div className="truncate text-xs text-[var(--color-text-secondary)]">{item.description}</div>
+                          </div>
+                          <span className="font-num shrink-0 text-sm text-[var(--color-text-secondary)]">{fmt(item.size)}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
               );
             })}
             {items.length === 0 && !scanning && (

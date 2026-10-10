@@ -78,14 +78,16 @@ pub struct SingleInstance {
 impl SingleInstance {
     /// 尝试获取全局命名互斥。返回 Err(false) = 已有实例在运行。
     pub fn new() -> Result<Self, bool> {
-        use windows_sys::Win32::System::Threading::{
-            CreateMutexW,
-        };
+        Self::with_name("Global\\CDiskSavior_SingleInstance_Mutex")
+    }
+
+    /// 带名字的获取（测试用独立名称，避免与正在运行的应用互相干扰）
+    fn with_name(name: &str) -> Result<Self, bool> {
+        use windows_sys::Win32::System::Threading::CreateMutexW;
         use windows_sys::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
         use windows_sys::Win32::Foundation::{HANDLE, INVALID_HANDLE_VALUE};
 
-        const NAME: &str = "Global\\CDiskSavior_SingleInstance_Mutex";
-        let wide: Vec<u16> = NAME.encode_utf16().chain(std::iter::once(0)).collect();
+        let wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
 
         unsafe {
             let handle = CreateMutexW(std::ptr::null(), 0, wide.as_ptr());
@@ -169,13 +171,15 @@ mod tests {
     }
 
     /// 场景 9：双实例互斥——第一个成功、第二个被拒
+    /// 用测试专用互斥名（避免与正在运行的应用实例互相干扰）
     #[test]
     fn double_instance_rejected() {
-        let first = SingleInstance::new();
+        let name = format!("Global\\CDiskSavior_Test_Mutex_{}", std::process::id());
+        let first = SingleInstance::with_name(&name);
         assert!(first.is_ok(), "第一次获取互斥应成功");
 
         // 第二次获取同一互斥 → 应被拒（已有实例）
-        match SingleInstance::new() {
+        match SingleInstance::with_name(&name) {
             Err(false) => {} // 预期：ERROR_ALREADY_EXISTS
             Err(true) => {} // 也可接受：创建失败按已有处理
             Ok(_) => panic!("第二次实例应被互斥拒绝"),
