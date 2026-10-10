@@ -1,6 +1,7 @@
 mod appdata;
 mod bigfiles;
 mod cleaner;
+mod collector;
 mod context_menu;
 mod growth;
 mod health;
@@ -101,6 +102,25 @@ pub fn run() {
             commands::set_always_on_top,
             commands::open_recycle_bin,
             commands::open_file,
+            // M1 系统信息 + M2 热点取消 + M3 动作记录（P3）
+            commands::get_disk_info,
+            commands::get_system_info,
+            commands::record_cleanup_action,
+            commands::cancel_hotspot_scan,
+            commands::scan_path_direct,
+            // M8 设置与工具批（P3）
+            commands::pick_folder_dialog,
+            commands::get_physical_size,
+            commands::open_logs_folder,
+            commands::set_data_directory,
+            commands::get_distribution_channel,
+            commands::get_storage_location_info,
+            commands::get_storage_write_diagnostic,
+            commands::list_clearable_data_items,
+            commands::clear_local_data,
+            commands::clear_selected_local_data,
+            commands::check_admin_for_path,
+            commands::open_startup_manager,
             // M8 设置与工具（P7 实现）
             commands::check_admin_privilege,
             commands::get_data_directory,

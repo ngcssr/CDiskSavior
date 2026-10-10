@@ -28,6 +28,13 @@ pub struct HotspotReport {
     pub duration_ms: u64,
 }
 
+static HOTSPOT_CANCELLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// 取消热点目录扫描
+pub fn cancel_hotspot_scan() {
+    HOTSPOT_CANCELLED.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
 const CACHE_KEYWORDS: &[&str] = &["cache", "caches", "tmp", "temp", "log", "logs", "download", "thumb", "webview"];
 
 fn is_cache_dir(name: &str) -> bool {
@@ -87,7 +94,10 @@ fn make_entry(path: &Path, depth: u8) -> HotspotEntry {
 }
 
 /// 热点扫描（AppData 三根 + 可选指定路径）
+/// 热点目录扫描（可取消：cancel_hotspot_scan）
 pub fn scan_hotspot(custom_root: Option<&str>) -> HotspotReport {
+    use std::sync::atomic::Ordering;
+    HOTSPOT_CANCELLED.store(false, Ordering::Relaxed);
     let t0 = std::time::Instant::now();
     let roots: Vec<PathBuf> = match custom_root {
         Some(r) => vec![PathBuf::from(r)],
@@ -103,11 +113,16 @@ pub fn scan_hotspot(custom_root: Option<&str>) -> HotspotReport {
         }
     };
 
-    let mut entries = Vec::new();
+    let mut entries: Vec<HotspotEntry> = Vec::new();
     let mut scanned = 0usize;
     for root in roots {
         let Ok(read) = std::fs::read_dir(&root) else { continue };
         for e in read.flatten() {
+            if HOTSPOT_CANCELLED.load(Ordering::Relaxed) {
+                entries.sort_by(|a, b| b.total_size.cmp(&a.total_size));
+                entries.truncate(30);
+                return HotspotReport { entries, scanned_folders: scanned, duration_ms: t0.elapsed().as_millis() as u64 };
+            }
             let p = e.path();
             if !p.is_dir() { continue; }
             if super::cleaner::engine::is_reparse_point(&p) { continue; }

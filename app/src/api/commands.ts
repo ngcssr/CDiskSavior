@@ -74,7 +74,7 @@ export const api_clean = {
   delete_leftover_folders: (paths: string[]) => invoke<DeletePathsReport>("delete_leftover_folders", { paths }),
   delete_leftovers_permanent: (paths: string[]) => invoke<DeletePathsReport>("delete_leftovers_permanent", { paths }),
   cleanup_directory_contents: (p: string) => invoke<DeletePathsReport>("cleanup_directory_contents", { path: p }),
-  record_cleanup_action: (a: CleanupAction) => invoke<void>("record_cleanup_action", { action: a }),
+  record_cleanup_action: (entries: unknown[]) => invoke<string>("record_cleanup_action", { entries }),
   open_recycle_bin: () => invoke<void>("open_recycle_bin"),
 };
 
@@ -152,8 +152,8 @@ export const api_settings = {
   get_storage_location_info: () => invoke<StorageLocationInfo>("get_storage_location_info"),
   get_storage_write_diagnostic: () => invoke<WriteDiagnostic>("get_storage_write_diagnostic"),
   list_clearable_data_items: () => invoke<ClearableItem[]>("list_clearable_data_items"),
-  clear_local_data: () => invoke<void>("clear_local_data"),
-  clear_selected_local_data: (keys: string[]) => invoke<void>("clear_selected_local_data", { keys }),
+  clear_local_data: () => invoke<ClearLocalDataResult>("clear_local_data"),
+  clear_selected_local_data: (keys: string[]) => invoke<ClearLocalDataResult>("clear_selected_local_data", { keys }),
   migrate_legacy_portable_data: () => invoke<{ found: boolean; legacyDir?: string; imported: string[]; skipped: string[]; message?: string }>("migrate_legacy_portable_data"),
   get_distribution_channel: () => invoke<string>("get_distribution_channel"),
   open_logs_folder: () => invoke<void>("open_logs_folder"),
@@ -184,8 +184,10 @@ export const api: Record<ModuleId, Record<string, (...a: any[]) => any>> = {
 
 // ==== P1 骨架占位类型（接入真实后端时逐个替换为共享类型定义） ====
 export type DriveInfo = { mount: string; label: string; total: number; free: number; fs: string; kind: string };
-export type DiskInfo = unknown;
-export type SystemInfo = unknown;
+export type DiskInfo = { drives: DriveInfo[] };
+export type SystemInfo = {
+  os: string; cpu: string; arch: string; memoryTotal: number; memoryAvailable: number;
+};
 export type MemoryReport = {
   overview: { total: number; available: number; usedPercent: number; swapTotal?: number; swapAvailable?: number };
   processes: unknown[];
@@ -314,10 +316,23 @@ export type SystemAnalyzeReport = unknown;
 export type DeepAnalyzeReport = unknown;
 export type DeepCleanReport = unknown;
 export type SystemCleanReport = unknown;
-export type CollectResult = unknown;
-export type StorageLocationInfo = unknown;
-export type WriteDiagnostic = unknown;
-export type ClearableItem = unknown;
+export type CollectResult = {
+  mdPath: string; jsonPath: string; softwareCount: number;
+  dirRows: number; driveRows: number; elapsedSecs: number;
+};
+export type StorageLocationInfo = {
+  channel: "installer" | "portable"; defaultDir: string; dataDir: string;
+  isCustomDir: boolean; configFile: string;
+};
+export type WriteDiagnostic = {
+  dataDirWritable: boolean; configDirWritable: boolean; errors: string[];
+};
+export type ClearableItem = {
+  id: string; name: string; description: string; size: number; fileCount: number;
+};
+export type ClearLocalDataResult = {
+  clearedItems: number; freed: number; errors: string[];
+};
 export type IntegrityReport = unknown;
 
 export type CleanupItem = {

@@ -2,10 +2,10 @@
 //!
 //! P3 实现：get_drives（真实 Windows API）+ scan_drive（jwalk 并行扫描 → TreeNode）
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// 扫描树节点（设计文档 §7 R6：以 disk-butler 的 TreeNode 为准）
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TreeNode {
     pub name: String,
@@ -168,7 +168,43 @@ pub fn scan_directory(root: &str) -> Result<TreeNode, String> {
     let mut tree = TreeNode::new_dir(&name, root);
     build_tree(&root_path, &mut tree, 0, 2); // 深度 2：顶层 + 一级子目录
 
+    // 写扫描缓存（load_scan_cache 秒显上次结果；写失败不影响扫描）
+    write_scan_cache(root, &tree);
+
     Ok(tree)
+}
+
+// ---------- 扫描缓存（scan-cache-<root>.json，数据目录下） ----------
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanCache {
+    pub scanned_at: u64,
+    pub root: String,
+    pub tree: TreeNode,
+}
+
+fn scan_cache_file(root: &str) -> Option<std::path::PathBuf> {
+    let safe = root.replace(['\\', ':', '/'], "_");
+    Some(crate::appdata::data_dir().join(format!("scan-cache-{}.json", safe)))
+}
+
+fn write_scan_cache(root: &str, tree: &TreeNode) {
+    let Some(file) = scan_cache_file(root) else { return };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let cache = ScanCache { scanned_at: now, root: root.to_string(), tree: tree.clone() };
+    let _ = crate::state::atomic_write_json(&file, &cache);
+}
+
+/// 读取上次扫描缓存（根路径匹配才返回；损坏自愈）
+pub fn load_scan_cache(root: &str) -> Option<ScanCache> {
+    let file = scan_cache_file(root)?;
+    let (cache, _) = crate::state::read_json_self_heal::<ScanCache>(&file).ok()??;
+    if cache.root != root { return None; }
+    Some(cache)
 }
 
 /// 递归构建目录树——返回子树总大小（单次遍历，消除冗余 dir_size 调用）

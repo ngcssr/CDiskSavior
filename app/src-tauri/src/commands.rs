@@ -231,9 +231,220 @@ pub fn has_disk_snapshot(drive: String) -> bool {
 }
 
 #[tauri::command]
-pub fn load_scan_cache(root: String) -> Option<serde_json::Value> {
-    let _ = root;
-    None
+pub fn load_scan_cache(root: String) -> Option<crate::scan::ScanCache> {
+    crate::scan::load_scan_cache(&root)
+}
+
+// ============ M1 系统信息（P3 补齐） ============
+
+/// 磁盘信息（卷容量/文件系统；与 get_drives 同数据源，映射表独立命令名）
+#[tauri::command]
+pub fn get_disk_info() -> Result<serde_json::Value, String> {
+    Ok(serde_json::json!({ "drives": crate::scan::get_drives() }))
+}
+
+/// 系统信息（OS/CPU/内存概览；注册表 + GlobalMemoryStatusEx，无 sysinfo 依赖）
+#[tauri::command]
+pub fn get_system_info() -> Result<serde_json::Value, String> {
+    use winreg::enums::HKEY_LOCAL_MACHINE;
+    use winreg::RegKey;
+
+    // OS 版本（Win11 的 ProductName 仍为 "Windows 10"，按 build ≥22000 修正）
+    let mut os = "Windows".to_string();
+    if let Ok(k) = RegKey::predef(HKEY_LOCAL_MACHINE)
+        .open_subkey(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion")
+    {
+        let product: String = k.get_value("ProductName").unwrap_or_else(|_| "Windows".into());
+        let disp: String = k.get_value("DisplayVersion").unwrap_or_default();
+        let build: String = k.get_value("CurrentBuildNumber").unwrap_or_default();
+        let product = if build.parse::<u32>().unwrap_or(0) >= 22000 {
+            product.replace("Windows 10", "Windows 11")
+        } else {
+            product
+        };
+        os = format!("{} {} (build {})", product, disp, build);
+    }
+
+    // CPU 名称
+    let cpu = RegKey::predef(HKEY_LOCAL_MACHINE)
+        .open_subkey(r"HARDWARE\DESCRIPTION\System\CentralProcessor\0")
+        .ok()
+        .and_then(|k| k.get_value::<String, _>("ProcessorNameString").ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+
+    // 内存（GlobalMemoryStatusEx）
+    let mut mem_total = 0u64;
+    let mut mem_avail = 0u64;
+    unsafe {
+        let mut stat: windows_sys::Win32::System::SystemInformation::MEMORYSTATUSEX =
+            std::mem::zeroed();
+        stat.dwLength = std::mem::size_of_val(&stat) as u32;
+        if windows_sys::Win32::System::SystemInformation::GlobalMemoryStatusEx(&mut stat) != 0 {
+            mem_total = stat.ullTotalPhys;
+            mem_avail = stat.ullAvailPhys;
+        }
+    }
+
+    Ok(serde_json::json!({
+        "os": os,
+        "cpu": cpu,
+        "arch": std::env::consts::ARCH,
+        "memoryTotal": mem_total,
+        "memoryAvailable": mem_avail,
+    }))
+}
+
+// ============ M3 清理动作记录（P3 补齐） ============
+
+/// 记录清理动作到 data_dir/logs/cleanup-actions.log（JSON 行）
+#[tauri::command]
+pub fn record_cleanup_action(entries: Vec<serde_json::Value>) -> Result<String, String> {
+    use std::io::Write;
+    let log_dir = crate::appdata::data_dir().join("logs");
+    std::fs::create_dir_all(&log_dir).map_err(|e| format!("创建日志目录失败: {}", e))?;
+    let file = log_dir.join("cleanup-actions.log");
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&file)
+        .map_err(|e| format!("打开日志失败: {}", e))?;
+    let ts = chrono::Local::now().to_rfc3339();
+    for entry in &entries {
+        let line = serde_json::json!({ "timestamp": ts, "entry": entry });
+        writeln!(f, "{}", line).map_err(|e| format!("写入日志失败: {}", e))?;
+    }
+    Ok(file.to_string_lossy().to_string())
+}
+
+// ============ M2 热点取消（P3 补齐） ============
+
+#[tauri::command]
+pub fn cancel_hotspot_scan() {
+    crate::growth::cancel_hotspot_scan();
+}
+
+/// 直接扫描指定路径（映射表独立命令名；与 scan_dir 同实现）
+#[tauri::command]
+pub async fn scan_path_direct(path: String) -> Result<crate::scan::TreeNode, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::scan::scan_directory(&path))
+        .await
+        .map_err(|e| format!("扫描失败: {}", e))?
+}
+
+// ============ M8 设置与工具（P3 补齐） ============
+
+/// 文件夹选择对话框
+#[tauri::command]
+pub async fn pick_folder_dialog(app: tauri::AppHandle, title: Option<String>) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let result = app
+        .dialog()
+        .file()
+        .set_title(title.as_deref().unwrap_or("选择目录"))
+        .blocking_pick_folder();
+    Ok(result.map(|p| p.to_string()))
+}
+
+/// 文件磁盘占用大小（GetCompressedFileSizeW，压缩/稀疏感知；失败回退逻辑大小）
+#[tauri::command]
+pub fn get_physical_size(path: String) -> Result<u64, String> {
+    let wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut high = 0u32;
+    let low = unsafe {
+        windows_sys::Win32::Storage::FileSystem::GetCompressedFileSizeW(wide.as_ptr(), &mut high)
+    };
+    if low == u32::MAX {
+        let err = unsafe { windows_sys::Win32::Foundation::GetLastError() };
+        if err != 0 {
+            // 回退：逻辑大小
+            return std::fs::metadata(&path)
+                .map(|m| m.len())
+                .map_err(|e| format!("无法读取文件大小 {}: {}", path, e));
+        }
+    }
+    Ok(((high as u64) << 32) | low as u64)
+}
+
+/// 打开日志目录
+#[tauri::command]
+pub fn open_logs_folder() -> Result<(), String> {
+    let dir = crate::appdata::data_dir().join("logs");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建日志目录失败: {}", e))?;
+    std::process::Command::new("explorer")
+        .arg(&dir)
+        .spawn()
+        .map_err(|e| format!("打开日志目录失败: {}", e))?;
+    Ok(())
+}
+
+/// 设置自定义数据目录（迁移现有数据，源保留）
+#[tauri::command]
+pub fn set_data_directory(path: String) -> Result<String, String> {
+    crate::appdata::set_data_dir(std::path::Path::new(&path))
+}
+
+/// 发行渠道（installer / portable）
+#[tauri::command]
+pub fn get_distribution_channel() -> crate::appdata::DistributionChannel {
+    crate::appdata::current_channel()
+}
+
+/// 存储位置信息
+#[tauri::command]
+pub fn get_storage_location_info() -> crate::appdata::StorageLocationInfo {
+    crate::appdata::storage_location_info()
+}
+
+/// 存储写入诊断
+#[tauri::command]
+pub fn get_storage_write_diagnostic() -> crate::appdata::StorageWriteDiagnostic {
+    crate::appdata::storage_write_diagnostic()
+}
+
+/// 可清理本地数据清单
+#[tauri::command]
+pub fn list_clearable_data_items() -> Vec<crate::appdata::ClearableDataItem> {
+    crate::appdata::list_clearable_items()
+}
+
+/// 清空全部可清理本地数据
+#[tauri::command]
+pub fn clear_local_data() -> crate::appdata::ClearLocalDataResult {
+    crate::appdata::clear_local_data_items(&[])
+}
+
+/// 按 id 清理指定本地数据
+#[tauri::command]
+pub fn clear_selected_local_data(keys: Vec<String>) -> crate::appdata::ClearLocalDataResult {
+    crate::appdata::clear_local_data_items(&keys)
+}
+
+/// 路径前缀判断是否需要管理员权限
+#[tauri::command]
+pub fn check_admin_for_path(path: String) -> bool {
+    let lower = path.to_lowercase().replace('/', "\\");
+    let admin_prefixes = [
+        "\\windows\\",
+        "\\program files\\",
+        "\\program files (x86)\\",
+        "\\programdata\\",
+        "$recycle.bin",
+    ];
+    admin_prefixes.iter().any(|p| lower.contains(p))
+        || lower.starts_with("c:\\windows")
+        || lower.starts_with("c:\\program files")
+        || lower.starts_with("c:\\programdata")
+}
+
+/// 打开系统启动项管理（Win10+ 设置页）
+#[tauri::command]
+pub fn open_startup_manager() -> Result<(), String> {
+    std::process::Command::new("explorer")
+        .arg("ms-settings:startupapps")
+        .spawn()
+        .map_err(|e| format!("打开启动项管理失败: {}", e))?;
+    Ok(())
 }
 
 // ============ M3 一键清理（P4 真实实现） ============
@@ -475,12 +686,13 @@ pub async fn run_deep_clean_system() -> Result<serde_json::Value, String> {
     .map_err(|e| format!("清理失败: {}", e))?
 }
 
+/// 规则采集报告（disk-butler collector 移植：目录名+大小+缓存模式+软件清单，
+/// 脱敏无文件名/内容/用户名，报告写桌面）
 #[tauri::command]
-pub fn collect_rules(_include_drives: bool) -> Result<serde_json::Value, String> {
-    Ok(serde_json::json!({
-        "rules": [],
-        "message": "规则采集功能待后续完善"
-    }))
+pub async fn collect_rules(include_drives: bool) -> Result<crate::collector::CollectResult, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::collector::collect(include_drives))
+        .await
+        .map_err(|e| format!("采集失败: {}", e))?
 }
 
 // ============ M8 设置与工具（P7 实现） ============
