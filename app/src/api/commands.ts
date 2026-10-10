@@ -49,9 +49,11 @@ export const api_clean = {
   get_cleanup_stats: () => invoke<CleanupStats>("get_cleanup_stats"),
   scan_orphan_dirs: () => invoke<OrphanScan>("scan_orphan_dirs"),
   clean_orphan_dirs: (paths: string[]) => invoke<ResidueReport>("clean_orphan_dirs", { paths }),
-  scan_junk_files: () => invoke<JunkReport>("scan_junk_files"),
-  scan_deep_junk_files: () => invoke<DeepJunkReport>("scan_deep_junk_files"),
+  // 深度垃圾扫描（light-c deep_junk 移植）
+  scan_deep_junk_files: () => invoke<DeepScanResult>("scan_deep_junk_files"),
   cancel_deep_junk_scan: () => invoke<void>("cancel_deep_junk_scan"),
+  delete_deep_junk_files: (ids: string[]) => invoke<DeepDeleteReport>("delete_deep_junk_files", { ids }),
+  scan_junk_files: () => invoke<JunkReport>("scan_junk_files"),
   get_deep_junk_category_page: (cat: string, page: number) => invoke<DeepJunkPage>("get_deep_junk_category_page", { category: cat, page }),
   scan_category: (cat: string) => invoke<CategoryReport>("scan_category", { category: cat }),
   get_categories: () => invoke<Category[]>("get_categories"),
@@ -63,7 +65,6 @@ export const api_clean = {
   remove_leftover_whitelist_entry: (e: string) => invoke<void>("remove_leftover_whitelist_entry", { entry: e }),
   delete_files: (paths: string[]) => invoke<DeleteResult>("delete_files", { paths }),
   enhanced_delete_files: (paths: string[]) => invoke<DeleteResult>("enhanced_delete_files", { paths }),
-  delete_deep_junk_files: (paths: string[]) => invoke<DeleteResult>("delete_deep_junk_files", { paths }),
   delete_leftover_folders: (paths: string[]) => invoke<DeleteResult>("delete_leftover_folders", { paths }),
   delete_leftovers_permanent: (paths: string[]) => invoke<DeleteResult>("delete_leftovers_permanent", { paths }),
   cleanup_directory_contents: (p: string) => invoke<DeleteResult>("cleanup_directory_contents", { path: p }),
@@ -256,3 +257,15 @@ export type CleanupItem = {
   path: string; category: string; safety: string;
 };
 export type OrphanEntry = { path: string; appName: string; size: number; note?: string };
+
+// 深度垃圾扫描类型
+export type DeepCategoryResult = {
+  id: string; name: string; description: string; risk: number;
+  size: number; fileCount: number; systemManaged: boolean;
+  topFiles: { path: string; size: number }[];
+};
+export type DeepScanResult = {
+  categories: DeepCategoryResult[]; totalSize: number; totalFiles: number;
+  durationMs: number; cancelled: boolean;
+};
+export type DeepDeleteReport = { freed: number; errors: string[] };

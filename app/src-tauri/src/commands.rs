@@ -83,6 +83,30 @@ pub async fn scan_orphan_dirs() -> Result<crate::cleaner::OrphanScan, String> {
         .map_err(|e| format!("扫描失败: {}", e))
 }
 
+// ============ M3 深度垃圾扫描（light-c deep_junk 移植） ============
+
+/// 深度扫描：19 类全分区文件级匹配（可取消，分钟级耗时）
+#[tauri::command]
+pub async fn scan_deep_junk_files() -> Result<crate::cleaner::deep_junk::DeepScanResult, String> {
+    tauri::async_runtime::spawn_blocking(crate::cleaner::deep_junk::scan)
+        .await
+        .map_err(|e| format!("扫描失败: {}", e))
+}
+
+/// 取消深度扫描
+#[tauri::command]
+pub fn cancel_deep_junk_scan() {
+    crate::cleaner::deep_junk::cancel_scan();
+}
+
+/// 删除指定深度类别（当场重扫 + R1 引擎）
+#[tauri::command]
+pub async fn delete_deep_junk_files(ids: Vec<String>) -> Result<crate::cleaner::deep_junk::DeepDeleteReport, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::cleaner::deep_junk::delete(&ids))
+        .await
+        .map_err(|e| format!("删除失败: {}", e))
+}
+
 /// 孤儿目录清理（当场重扫白名单 + canonicalize 校验）——async：删除+重扫
 #[tauri::command]
 pub async fn clean_orphan_dirs(paths: Vec<String>) -> Result<crate::cleaner::ResidueReport, String> {

@@ -28,6 +28,9 @@ pub fn run() {
             commands::get_cleanup_stats,
             commands::scan_orphan_dirs,
             commands::clean_orphan_dirs,
+            commands::scan_deep_junk_files,
+            commands::cancel_deep_junk_scan,
+            commands::delete_deep_junk_files,
             // M4 空间腾挪（P2 实现）
             relocate_commands::scan_relocate_targets,
             relocate_commands::list_locking_processes,

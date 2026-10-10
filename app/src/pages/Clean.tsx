@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { api_clean } from "../api/commands";
 import {
-  Trash2, RefreshCw, ShieldCheck, AlertTriangle, FolderX,
+  Trash2, RefreshCw, ShieldCheck, AlertTriangle, FolderX, Layers, X,
 } from "lucide-react";
 
 type CleanupItem = {
@@ -50,6 +50,10 @@ export default function Clean() {
   const [cleaning, setCleaning] = useState(false);
   const [result, setResult] = useState<{ freed: number; errors: string[]; skipped: string[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 深度扫描状态
+  const [deep, setDeep] = useState<import("../api/commands").DeepScanResult | null>(null);
+  const [deepScanning, setDeepScanning] = useState(false);
+  const [deepSelected, setDeepSelected] = useState<Set<string>>(new Set());
 
   const refresh = useCallback(async () => {
     setScanning(true);
@@ -88,6 +92,51 @@ export default function Clean() {
       group.forEach((i) => (allIn ? n.delete(i.id) : n.add(i.id)));
       return n;
     });
+  };
+
+  // ===== 深度扫描状态与操作 =====
+  const runDeepScan = async () => {
+    setDeepScanning(true);
+    setDeep(null);
+    setDeepSelected(new Set());
+    setError(null);
+    try {
+      const r = await api_clean.scan_deep_junk_files();
+      setDeep(r);
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setDeepScanning(false);
+    }
+  };
+
+  const cancelDeep = async () => {
+    await api_clean.cancel_deep_junk_scan();
+  };
+
+  const toggleDeep = (id: string) => {
+    setDeepSelected((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+  };
+
+  const doDeepDelete = async () => {
+    setCleaning(true);
+    setResult(null);
+    try {
+      const r = await api_clean.delete_deep_junk_files(Array.from(deepSelected));
+      setResult({ freed: r.freed, errors: r.errors, skipped: [] });
+      setDeepSelected(new Set());
+      // 重扫深度结果 + 快速列表
+      const [d2] = await Promise.all([api_clean.scan_deep_junk_files(), refresh()]);
+      setDeep(d2);
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setCleaning(false);
+    }
   };
 
   const doClean = async () => {
@@ -249,6 +298,81 @@ export default function Clean() {
               <div className="py-8 text-center text-sm text-[var(--color-text-secondary)]">无可清理项</div>
             )}
           </div>
+        </section>
+
+        {/* 深度垃圾扫描（light-c deep_junk 移植） */}
+        <section className="mb-6">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text-secondary)]">
+              <Layers size={14} /> 深度扫描（19 类文件级匹配）
+            </h2>
+            {deepScanning ? (
+              <button onClick={cancelDeep} className="flex items-center gap-1.5 rounded-lg bg-[var(--color-danger-bg-soft)] px-3 py-1.5 text-sm text-[var(--color-danger-text)]">
+                <X size={14} /> 取消扫描
+              </button>
+            ) : (
+              <button onClick={runDeepScan} disabled={cleaning} className="flex items-center gap-1.5 rounded-lg bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
+                <Layers size={14} /> 开始深度扫描
+              </button>
+            )}
+          </div>
+
+          {deepScanning && (
+            <div className="pulse rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] px-4 py-3 text-sm text-[var(--color-text-secondary)]">
+              正在全分区深度扫描（19 类，分钟级）… 可随时取消
+            </div>
+          )}
+
+          {deep && !deepScanning && (
+            <>
+              <div className="mb-3 flex items-center justify-between rounded-xl bg-[var(--color-surface-hover)] px-4 py-2 text-sm">
+                <span>
+                  {deep.cancelled ? "扫描已取消（部分结果）" : `扫描完成（${(deep.durationMs / 1000).toFixed(1)}s）`}
+                  ：{deep.categories.length} 类 · {deep.totalFiles.toLocaleString()} 个文件 · 共 <strong>{fmt(deep.totalSize)}</strong>
+                </span>
+                {deepSelected.size > 0 && (
+                  <button onClick={doDeepDelete} disabled={cleaning} className="flex items-center gap-1.5 rounded-lg bg-[var(--color-danger-bg-soft)] px-3 py-1.5 text-sm text-[var(--color-danger-text)] disabled:opacity-50">
+                    <Trash2 size={14} /> 删除 {deepSelected.size} 类
+                  </button>
+                )}
+              </div>
+              <div className="space-y-1">
+                {deep.categories.map((c) => (
+                  <label
+                    key={c.id}
+                    className={`flex items-center gap-3 rounded-lg px-3 py-2 ${
+                      c.systemManaged ? "opacity-60" : "cursor-pointer hover:bg-[var(--color-surface-hover)]"
+                    } ${deepSelected.has(c.id) ? "bg-[var(--color-primary-soft)]" : ""}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={deepSelected.has(c.id)}
+                      onChange={() => toggleDeep(c.id)}
+                      disabled={cleaning || c.systemManaged}
+                      className="h-4 w-4 accent-[var(--color-primary)]"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">{c.name}</span>
+                        <span className="rounded-full px-2 py-0.5 text-[10px]" style={{
+                          background: c.risk >= 3 ? "rgba(248,113,113,0.12)" : c.risk === 2 ? "rgba(251,191,36,0.12)" : "rgba(52,211,153,0.12)",
+                          color: c.risk >= 3 ? "var(--color-danger)" : c.risk === 2 ? "var(--color-caution)" : "var(--color-safe)",
+                        }}>
+                          {c.risk >= 3 ? "谨慎" : c.risk === 2 ? "低风险" : "安全"}
+                        </span>
+                        {c.systemManaged && <span className="text-[10px] text-[var(--color-caution)]">系统托管</span>}
+                      </div>
+                      <div className="truncate text-xs text-[var(--color-text-secondary)]">{c.description}</div>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <div className="font-num text-sm text-[var(--color-text-secondary)]">{fmt(c.size)}</div>
+                      <div className="text-[10px] text-[var(--color-text-dim)]">{c.fileCount.toLocaleString()} 个文件</div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
         </section>
 
         {/* 孤儿目录 */}
