@@ -44,6 +44,7 @@ pub fn check_dir_locking(path: &std::path::Path) -> Vec<LockingProcess> {
     all_processes
 }
 
+#[allow(dead_code)] // P9: RM 接入后使用
 fn get_process_path(pid: u32) -> Option<String> {
     use windows_sys::Win32::System::Threading::*;
     unsafe {

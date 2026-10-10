@@ -3,19 +3,6 @@
 // 设计文档 §4：116 个统一命令。P1 骨架 + P2 M4 + P3 M1/M2 真实实现。
 // 其余模块在 P4+ 按模块接入。
 
-use serde::Serialize;
-
-/// 统一的占位错误类型
-#[derive(Debug, Serialize)]
-pub struct NotReady {
-    pub cmd: &'static str,
-    pub phase: &'static str,
-}
-
-pub fn not_ready(cmd: &'static str) -> NotReady {
-    NotReady { cmd, phase: "待接入真实实现" }
-}
-
 // ============ M1 总览（P3 真实实现） ============
 
 /// 驱动器列表（真实 Windows API：GetLogicalDriveStringsW + GetDiskFreeSpaceExW）

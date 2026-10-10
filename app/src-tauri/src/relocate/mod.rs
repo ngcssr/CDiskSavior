@@ -12,18 +12,6 @@ pub mod validate;
 
 use serde::Serialize;
 
-/// 迁移请求（前端 → 后端）
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MigrationRequest {
-    /// 要迁移的源目录列表（绝对路径）
-    pub sources: Vec<String>,
-    /// 迁移根目录（如 G:\CDisk Savior）
-    pub target_root: String,
-    /// 是否自动结束占用进程（用户已逐个确认过的 PID 列表）
-    pub kill_pids: Option<Vec<u32>>,
-}
-
 /// 迁移进度事件（后端 → 前端，app.emit）
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase", tag = "type")]
@@ -53,9 +41,4 @@ pub enum MigrationProgress {
     Cancelled { partial_cleanup: String },
 }
 
-/// 迁移控制信号（AtomicU8 暂停点检查）
-pub enum Control {
-    Running,
-    Paused,
-    Cancelled,
-}
+

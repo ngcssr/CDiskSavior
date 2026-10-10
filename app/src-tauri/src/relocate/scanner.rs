@@ -100,8 +100,6 @@ pub fn scan_large_folders(
                 get_dir_size(&p)
             };
 
-            let dir_name = entry.file_name().to_string_lossy().to_string();
-
             // 阈值过滤（junction 的 size=0 会被过滤，除非用户明确要看）
             if let Some(t) = threshold_bytes {
                 if size < t && !is_jct {

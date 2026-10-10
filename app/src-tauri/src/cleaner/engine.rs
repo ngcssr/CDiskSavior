@@ -157,6 +157,7 @@ fn dir_size(path: &Path) -> u64 {
 /// 删除台账（记录每次操作，供统计和审计）
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // P9 使用：审计日志
 pub struct DeleteLog {
     pub timestamp: u64,
     pub path: String,

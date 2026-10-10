@@ -11,27 +11,27 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SlimStatus {
-    pub hibernationEnabled: bool,
-    pub winsxsSize: Option<u64>,
-    pub searchIndexRunning: bool,
-    pub oldDriverCount: usize,
-    pub oldDriverTotalSize: u64,
-    pub registryRedundantCount: usize,
-    pub aiModelCount: usize,
-    pub aiModelTotalSize: u64,
+    pub hibernation_enabled: bool,
+    pub winsxs_size: Option<u64>,
+    pub search_index_running: bool,
+    pub old_driver_count: usize,
+    pub old_driver_total_size: u64,
+    pub registry_redundant_count: usize,
+    pub ai_model_count: usize,
+    pub ai_model_total_size: u64,
 }
 
 /// 获取系统瘦身状态
 pub fn get_status() -> SlimStatus {
     SlimStatus {
-        hibernationEnabled: check_hibernation(),
-        winsxsSize: get_winsxs_size(),
-        searchIndexRunning: check_search_service(),
-        oldDriverCount: 0,
-        oldDriverTotalSize: 0,
-        registryRedundantCount: 0,
-        aiModelCount: 0,
-        aiModelTotalSize: 0,
+        hibernation_enabled: check_hibernation(),
+        winsxs_size: get_winsxs_size(),
+        search_index_running: check_search_service(),
+        old_driver_count: 0,
+        old_driver_total_size: 0,
+        registry_redundant_count: 0,
+        ai_model_count: 0,
+        ai_model_total_size: 0,
     }
 }
 
@@ -211,14 +211,15 @@ pub struct RegistryEntry {
 /// 扫描注册表冗余（已知路径：卸载残留、MUI 缓存等）
 pub fn scan_registry_redundancy() -> Vec<RegistryEntry> {
     // P5 简化：扫描 Uninstall 下的无效条目
-    let mut entries = Vec::new();
+    let entries = Vec::new();
     // TODO: 用 winreg 扫描 HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall
     // P5 暂不实现完整扫描——后端返回空列表，前端显示"未发现"
     entries
 }
 
 /// 删除注册表条目（先备份）
-pub fn delete_registry_entries(entries: &[RegistryEntry]) -> u32 {
+#[allow(dead_code)] // P9: 注册表清理接入后使用
+pub fn delete_registry_entries(_entries: &[RegistryEntry]) -> u32 {
     // P5 占位：需先实现 reg export 备份 + reg delete
     0
 }
@@ -226,6 +227,7 @@ pub fn delete_registry_entries(entries: &[RegistryEntry]) -> u32 {
 // ============ 图标缓存 ============
 
 /// 清理图标缓存（删除 IconCache.db + 重启资源管理器）
+#[allow(dead_code)] // P9: 图标缓存清理接入后使用
 pub fn clear_icon_cache() -> Result<(), String> {
     let local = std::env::var("LOCALAPPDATA").map_err(|_| "无法读取 LOCALAPPDATA")?;
     let icon_cache = PathBuf::from(&local).join("IconCache.db");
@@ -248,7 +250,7 @@ pub struct AiModelEntry {
     pub name: String,
     pub path: String,
     pub size: u64,
-    pub lastModified: u64,
+    pub last_modified: u64,
 }
 
 /// 扫描 AI 模型资产
@@ -291,7 +293,7 @@ pub fn scan_ai_model_assets() -> Vec<AiModelEntry> {
                 .unwrap_or(0);
             entries.push(AiModelEntry {
                 id: uuid::Uuid::new_v4().to_string(),
-                name, path, size, lastModified: mtime,
+                name, path, size, last_modified: mtime,
             });
         }
     }

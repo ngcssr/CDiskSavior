@@ -19,7 +19,7 @@ pub enum TargetRootCheck {
 /// 4. 目标目录不存在时可以创建，但父目录链必须可写
 pub fn validate_target_root(root: &Path) -> TargetRootCheck {
     use windows_sys::Win32::Storage::FileSystem::{
-        GetDriveTypeW, GetLogicalDrives,
+        GetDriveTypeW,
     };
 
     // 1. 解析盘符

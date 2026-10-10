@@ -10,11 +10,11 @@
 //! V13 临时目录名用拼接，不用 with_extension
 
 use crate::relocate::{
-    config::RelocateConfig, history::MigrationRecord, junction, proc_mgr,
+    history::MigrationRecord, junction, proc_mgr,
     validate, MigrationProgress,
 };
 use crate::state;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -135,7 +135,6 @@ impl MigrationTask {
             let _ = std::fs::create_dir_all(target_path.parent().unwrap_or(Path::new("")));
 
             // 复制
-            let t0 = Instant::now();
             if let Err(e) = self.copy_dir(
                 &source,
                 &target_partial,
@@ -261,7 +260,7 @@ impl MigrationTask {
         src: &Path,
         dst: &Path,
         total_size: u64,
-        kill_pids: &[u32],
+        _kill_pids: &[u32],
     ) -> Result<(), String> {
         std::fs::create_dir_all(dst).map_err(|e| format!("创建目标目录失败: {}", e))?;
 

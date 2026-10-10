@@ -81,6 +81,7 @@ impl HistoryManager {
     }
 
     /// 获取 protected_paths：所有现存 junction 的源路径（用于 M3 清理互斥）
+    #[allow(dead_code)] // P9: M3 清理时使用
     pub fn protected_paths(&self) -> Vec<String> {
         self.load()
             .iter()

@@ -1,5 +1,6 @@
 import { useAppStore } from "./store";
 import { MODULES } from "./modules";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { HardDriveDownload } from "lucide-react";
 
 export default function App() {
@@ -46,7 +47,9 @@ export default function App() {
       <main className="flex-1 overflow-y-auto">
         {MODULES.map((m) => (
           <div key={m.id} className={active === m.id ? "block h-full" : "hidden"}>
-            <m.page />
+            <ErrorBoundary>
+              <m.page />
+            </ErrorBoundary>
           </div>
         ))}
       </main>

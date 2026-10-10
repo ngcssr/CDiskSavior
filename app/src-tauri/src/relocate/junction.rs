@@ -50,6 +50,7 @@ pub fn is_junction(path: &Path) -> bool {
 }
 
 /// 获取 Junction 指向的真实目标（canonicalize 解析链接）
+#[allow(dead_code)] // P9 使用
 pub fn junction_target(path: &Path) -> Option<std::path::PathBuf> {
     std::fs::canonicalize(path).ok()
 }

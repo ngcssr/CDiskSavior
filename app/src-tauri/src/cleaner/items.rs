@@ -120,7 +120,7 @@ pub fn run(ids: &[String]) -> CleanupReport {
         let result = if path.is_dir() {
             if item.id == "recycle-bin" {
                 // 回收站：特殊处理（SHEmptyRecycleBin 等效——P4 简化用 remove_dir_all）
-                match safe_clean_dir_contents(path, &allowed_roots) {
+                match safe_clean_dir_contents(path) {
                     Ok(size) => { freed += size; continue; }
                     Err(e) => { errors.push(format!("清空回收站失败: {}", e)); continue; }
                 }
@@ -150,7 +150,7 @@ pub fn run(ids: &[String]) -> CleanupReport {
 }
 
 /// 清空目录内容（不删目录本身）
-fn safe_clean_dir_contents(path: &std::path::Path, allowed_roots: &[PathBuf]) -> std::io::Result<u64> {
+fn safe_clean_dir_contents(path: &std::path::Path) -> std::io::Result<u64> {
     use super::engine::is_reparse_point;
     let mut total = 0u64;
     for entry in std::fs::read_dir(path)? {

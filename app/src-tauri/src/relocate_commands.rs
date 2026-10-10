@@ -4,7 +4,6 @@
 // P2 阶段实现，含 R2/R3/R9 全部安全要求。
 
 use crate::relocate::{
-    self,
     config::{self, RelocateConfig},
     history::{HistoryManager, MigrationRecord},
     mover::{self, MigrationTask},
@@ -14,7 +13,7 @@ use crate::relocate::{
 use crate::state;
 use std::sync::atomic::AtomicU8;
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 /// 全局迁移任务句柄（同一时刻只允许一个迁移在跑——单实例 + 全局写锁保证）
 static CURRENT_TASK: Mutex<Option<TaskHandle>> = Mutex::new(None);

@@ -130,6 +130,7 @@ fn try_legacy_import() -> (RelocateConfig, bool) {
 
 /// WindowsClear 配置格式
 #[derive(Deserialize)]
+#[allow(dead_code)] // legacy 格式解析
 struct WcConfig {
     version: u32,
     target_root: String,

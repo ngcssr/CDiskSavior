@@ -1,7 +1,6 @@
 //! M5 系统瘦身的 Tauri 命令封装
 
 use crate::slim;
-use serde::Serialize;
 
 #[tauri::command]
 pub fn get_system_slim_status() -> Result<slim::SlimStatus, String> {
