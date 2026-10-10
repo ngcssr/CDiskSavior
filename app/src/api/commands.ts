@@ -58,8 +58,9 @@ export const api_clean = {
   scan_category: (cat: string) => invoke<CategoryReport>("scan_category", { category: cat }),
   get_categories: () => invoke<Category[]>("get_categories"),
   scan_social_cache: () => invoke<SocialCacheReport>("scan_social_cache"),
-  scan_uninstall_leftovers: () => invoke<LeftoverReport>("scan_uninstall_leftovers"),
+  scan_uninstall_leftovers: () => invoke<LeftoverScan>("scan_uninstall_leftovers"),
   check_leftover_safety: (p: string) => invoke<LeftoverSafety>("check_leftover_safety", { path: p }),
+  delete_leftovers: (paths: string[]) => invoke<LeftoverDeleteReport>("delete_leftovers", { paths }),
   list_leftover_whitelist: () => invoke<string[]>("list_leftover_whitelist"),
   add_leftover_whitelist_entry: (e: string) => invoke<void>("add_leftover_whitelist_entry", { entry: e }),
   remove_leftover_whitelist_entry: (e: string) => invoke<void>("remove_leftover_whitelist_entry", { entry: e }),
@@ -209,7 +210,6 @@ export type CategoryReport = unknown;
 export type Category = unknown;
 export type SocialCacheReport = unknown;
 export type LeftoverReport = unknown;
-export type LeftoverSafety = unknown;
 export type DeleteResult = unknown;
 export type CleanupAction = unknown;
 export type RelocateTarget = { label: string; source: string; targetSubdir: string; size: number; path: string; isJunction: boolean };
@@ -269,3 +269,14 @@ export type DeepScanResult = {
   durationMs: number; cancelled: boolean;
 };
 export type DeepDeleteReport = { freed: number; errors: string[] };
+
+// 卸载残留类型
+export type LeftoverEntry = {
+  path: string; name: string; size: number; score: number;
+  reasons: string[]; lastModifiedDays: number;
+};
+export type LeftoverScan = { high: LeftoverEntry[]; suspicious: LeftoverEntry[] };
+export type LeftoverSafety = {
+  path: string; score: number; verdict: string; reasons: string[];
+};
+export type LeftoverDeleteReport = { freed: number; errors: string[]; skipped: string[] };

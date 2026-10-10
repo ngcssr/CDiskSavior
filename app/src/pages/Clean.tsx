@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { api_clean } from "../api/commands";
 import {
-  Trash2, RefreshCw, ShieldCheck, AlertTriangle, FolderX, Layers, X,
+  Trash2, RefreshCw, AlertTriangle, FolderX, Layers, X,
 } from "lucide-react";
 
 type CleanupItem = {
@@ -9,7 +9,6 @@ type CleanupItem = {
   path: string; category: string; safety: string;
 };
 type CleanupStats = { totalFreed: number; totalRuns: number; lastAt: number };
-type OrphanEntry = { path: string; appName: string; size: number; note?: string };
 
 function fmt(bytes: number): string {
   if (!bytes) return "0 B";
@@ -45,7 +44,9 @@ export default function Clean() {
   const [items, setItems] = useState<CleanupItem[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [stats, setStats] = useState<CleanupStats | null>(null);
-  const [orphans, setOrphans] = useState<OrphanEntry[]>([]);
+  // 卸载残留（置信度评分引擎）
+  const [leftovers, setLeftovers] = useState<import("../api/commands").LeftoverScan | null>(null);
+  const [leftoverSelected, setLeftoverSelected] = useState<Set<string>>(new Set());
   const [scanning, setScanning] = useState(false);
   const [cleaning, setCleaning] = useState(false);
   const [result, setResult] = useState<{ freed: number; errors: string[]; skipped: string[] } | null>(null);
@@ -59,14 +60,16 @@ export default function Clean() {
     setScanning(true);
     setError(null);
     try {
-      const [scan, st, orph] = await Promise.all([
+      const [scan, st, lo] = await Promise.all([
         api_clean.list_cleanup_items(),
         api_clean.get_cleanup_stats(),
-        api_clean.scan_orphan_dirs(),
+        api_clean.scan_uninstall_leftovers(),
       ]);
       setItems(scan.items);
       setStats(st);
-      setOrphans(orph.confirmed);
+      setLeftovers(lo);
+      // 高置信度默认勾选
+      setLeftoverSelected(new Set(lo.high.map((e) => e.path)));
     } catch (e: any) {
       setError(e?.message ?? String(e));
     } finally {
@@ -153,16 +156,33 @@ export default function Clean() {
     }
   };
 
-  const cleanOrphans = async () => {
+  const toggleLeftover = (path: string) => {
+    setLeftoverSelected((s) => {
+      const n = new Set(s);
+      if (n.has(path)) n.delete(path); else n.add(path);
+      return n;
+    });
+  };
+
+  const deleteLeftovers = async () => {
     setCleaning(true);
     try {
-      const r = await api_clean.clean_orphan_dirs(orphans.map((o) => o.path));
-      setResult({ freed: r.freed, errors: r.errors, skipped: [] });
+      const r = await api_clean.delete_leftovers(Array.from(leftoverSelected));
+      setResult({ freed: r.freed, errors: r.errors, skipped: r.skipped });
       await refresh();
     } catch (e: any) {
       setError(e?.message ?? String(e));
     } finally {
       setCleaning(false);
+    }
+  };
+
+  const protectLeftover = async (name: string) => {
+    try {
+      await api_clean.add_leftover_whitelist_entry(name);
+      await refresh();
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
     }
   };
 
@@ -375,34 +395,81 @@ export default function Clean() {
           )}
         </section>
 
-        {/* 孤儿目录 */}
-        {orphans.length > 0 && (
+        {/* 卸载残留（置信度评分引擎） */}
+        {leftovers && (leftovers.high.length > 0 || leftovers.suspicious.length > 0) && (
           <section>
             <div className="mb-3 flex items-center justify-between">
               <h2 className="flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text-secondary)]">
-                <FolderX size={14} /> 孤儿残留
+                <FolderX size={14} /> 卸载残留（评分引擎）
               </h2>
-              <button
-                onClick={cleanOrphans}
-                disabled={cleaning}
-                className="flex items-center gap-1.5 rounded-lg bg-[var(--color-danger-bg-soft)] px-3 py-1.5 text-sm text-[var(--color-danger-text)] disabled:opacity-50"
-              >
-                <Trash2 size={14} />
-                全部清理
-              </button>
+              {leftoverSelected.size > 0 && (
+                <button
+                  onClick={deleteLeftovers}
+                  disabled={cleaning}
+                  className="flex items-center gap-1.5 rounded-lg bg-[var(--color-danger-bg-soft)] px-3 py-1.5 text-sm text-[var(--color-danger-text)] disabled:opacity-50"
+                >
+                  <Trash2 size={14} />
+                  删除 {leftoverSelected.size} 项
+                </button>
+              )}
             </div>
-            <div className="space-y-1">
-              {orphans.map((o) => (
-                <div key={o.path} className="flex items-center gap-3 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-2">
-                  <ShieldCheck size={16} className="text-[var(--color-caution)]" />
-                  <div className="flex-1">
-                    <div className="text-sm font-medium">{o.appName}</div>
-                    <div className="truncate font-mono text-xs text-[var(--color-text-secondary)]">{o.path}</div>
-                  </div>
-                  <span className="text-sm tabular-nums text-[var(--color-text-secondary)]">{fmt(o.size)}</span>
+
+            {/* 高置信度（默认勾选） */}
+            {leftovers.high.length > 0 && (
+              <>
+                <div className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-dim)]">
+                  高置信度（{leftovers.high.length}）— 已默认勾选
                 </div>
-              ))}
-            </div>
+                <div className="mb-3 space-y-0.5">
+                  {leftovers.high.map((e) => (
+                    <div key={e.path} className={`flex items-center gap-3 rounded-lg px-3 py-2 ${leftoverSelected.has(e.path) ? "bg-[var(--color-primary-soft)]" : "hover:bg-[var(--color-surface-hover)]"}`}>
+                      <input type="checkbox" checked={leftoverSelected.has(e.path)} onChange={() => toggleLeftover(e.path)} disabled={cleaning} className="h-4 w-4 accent-[var(--color-primary)]" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">{e.name}</span>
+                          <span className="rounded-full bg-[var(--color-safe)]/10 px-2 py-0.5 text-[10px] text-[var(--color-safe)]">评分 {e.score.toFixed(2)}</span>
+                        </div>
+                        <div className="truncate font-mono text-xs text-[var(--color-text-secondary)]">{e.path}</div>
+                        <div className="truncate text-[10px] text-[var(--color-text-dim)]">{e.reasons.slice(0, 3).join(" · ")}</div>
+                      </div>
+                      <span className="font-num shrink-0 text-sm text-[var(--color-text-secondary)]">{fmt(e.size)}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* 可疑（不默认勾选） */}
+            {leftovers.suspicious.length > 0 && (
+              <>
+                <div className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-dim)]">
+                  可疑（{leftovers.suspicious.length}）— 请人工确认
+                </div>
+                <div className="space-y-0.5">
+                  {leftovers.suspicious.map((e) => (
+                    <div key={e.path} className={`flex items-center gap-3 rounded-lg px-3 py-2 ${leftoverSelected.has(e.path) ? "bg-[var(--color-primary-soft)]" : "hover:bg-[var(--color-surface-hover)]"}`}>
+                      <input type="checkbox" checked={leftoverSelected.has(e.path)} onChange={() => toggleLeftover(e.path)} disabled={cleaning} className="h-4 w-4 accent-[var(--color-primary)]" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">{e.name}</span>
+                          <span className="rounded-full bg-[var(--color-caution)]/10 px-2 py-0.5 text-[10px] text-[var(--color-caution)]">评分 {e.score.toFixed(2)}</span>
+                        </div>
+                        <div className="truncate font-mono text-xs text-[var(--color-text-secondary)]">{e.path}</div>
+                        <div className="truncate text-[10px] text-[var(--color-text-dim)]">{e.reasons.slice(0, 3).join(" · ")}</div>
+                      </div>
+                      <button
+                        onClick={() => protectLeftover(e.name)}
+                        className="shrink-0 rounded-lg px-2 py-1 text-[10px] text-[var(--color-primary)] hover:bg-[var(--color-primary-soft)]"
+                        title="加入白名单（永不判为残留）"
+                      >
+                        保护
+                      </button>
+                      <span className="font-num shrink-0 text-sm text-[var(--color-text-secondary)]">{fmt(e.size)}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </section>
         )}
       </div>

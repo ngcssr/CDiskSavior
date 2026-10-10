@@ -31,6 +31,12 @@ pub fn run() {
             commands::scan_deep_junk_files,
             commands::cancel_deep_junk_scan,
             commands::delete_deep_junk_files,
+            commands::scan_uninstall_leftovers,
+            commands::check_leftover_safety,
+            commands::delete_leftovers,
+            commands::list_leftover_whitelist,
+            commands::add_leftover_whitelist_entry,
+            commands::remove_leftover_whitelist_entry,
             // M4 空间腾挪（P2 实现）
             relocate_commands::scan_relocate_targets,
             relocate_commands::list_locking_processes,

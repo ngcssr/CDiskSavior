@@ -8,6 +8,7 @@ pub mod items;
 pub mod orphans;
 pub mod stats;
 pub mod deep_junk;
+pub mod leftovers;
 
 use serde::Serialize;
 

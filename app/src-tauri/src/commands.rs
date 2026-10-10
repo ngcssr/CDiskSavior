@@ -118,6 +118,46 @@ pub async fn clean_orphan_dirs(paths: Vec<String>) -> Result<crate::cleaner::Res
 // ============ M4 空间腾挪 ============
 // M4 命令已移至 relocate_commands.rs（P2 实现）
 
+// ============ M3 卸载残留（light-c leftovers 置信度评分引擎） ============
+
+/// 残留扫描（注册表在装映射 + 加权评分 + 阈值分级）
+#[tauri::command]
+pub async fn scan_uninstall_leftovers() -> Result<crate::cleaner::leftovers::LeftoverScan, String> {
+    tauri::async_runtime::spawn_blocking(crate::cleaner::leftovers::scan)
+        .await
+        .map_err(|e| format!("扫描失败: {}", e))
+}
+
+/// 单路径安全性检查（评分 + 理由）
+#[tauri::command]
+pub fn check_leftover_safety(path: String) -> crate::cleaner::leftovers::LeftoverSafety {
+    crate::cleaner::leftovers::check_safety(&path)
+}
+
+/// 删除残留（当场重扫 + R1 引擎）
+#[tauri::command]
+pub async fn delete_leftovers(paths: Vec<String>) -> Result<crate::cleaner::leftovers::LeftoverDeleteReport, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::cleaner::leftovers::delete(&paths))
+        .await
+        .map_err(|e| format!("删除失败: {}", e))
+}
+
+/// 白名单管理
+#[tauri::command]
+pub fn list_leftover_whitelist() -> Vec<String> {
+    crate::cleaner::leftovers::list_whitelist()
+}
+
+#[tauri::command]
+pub fn add_leftover_whitelist_entry(entry: String) -> Result<(), String> {
+    crate::cleaner::leftovers::add_whitelist(&entry)
+}
+
+#[tauri::command]
+pub fn remove_leftover_whitelist_entry(entry: String) -> Result<(), String> {
+    crate::cleaner::leftovers::remove_whitelist(&entry)
+}
+
 // ============ M6 启动与内存（P6 真实实现） ============
 
 #[tauri::command]
