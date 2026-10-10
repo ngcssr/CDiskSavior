@@ -68,7 +68,7 @@ pub async fn start_migration(
 
     // 存入全局句柄
     {
-        let mut current = CURRENT_TASK.lock().unwrap();
+        let mut current = CURRENT_TASK.lock().unwrap_or_else(|p| p.into_inner());
         if current.is_some() {
             return Err("已有迁移任务在运行".into());
         }
@@ -88,7 +88,7 @@ pub async fn start_migration(
 
     // 清除全局句柄
     {
-        let mut current = CURRENT_TASK.lock().unwrap();
+        let mut current = CURRENT_TASK.lock().unwrap_or_else(|p| p.into_inner());
         *current = None;
     }
 
@@ -104,7 +104,7 @@ pub async fn start_migration(
 /// 暂停迁移
 #[tauri::command]
 pub fn pause_migration() -> Result<(), String> {
-    let current = CURRENT_TASK.lock().unwrap();
+    let current = CURRENT_TASK.lock().unwrap_or_else(|p| p.into_inner());
     if let Some(handle) = current.as_ref() {
         mover::pause(&handle.control);
         Ok(())
@@ -116,7 +116,7 @@ pub fn pause_migration() -> Result<(), String> {
 /// 继续迁移
 #[tauri::command]
 pub fn resume_migration() -> Result<(), String> {
-    let current = CURRENT_TASK.lock().unwrap();
+    let current = CURRENT_TASK.lock().unwrap_or_else(|p| p.into_inner());
     if let Some(handle) = current.as_ref() {
         mover::resume(&handle.control);
         Ok(())
@@ -128,7 +128,7 @@ pub fn resume_migration() -> Result<(), String> {
 /// 取消迁移（V12：触发 .partial 清理）
 #[tauri::command]
 pub fn cancel_migration() -> Result<(), String> {
-    let current = CURRENT_TASK.lock().unwrap();
+    let current = CURRENT_TASK.lock().unwrap_or_else(|p| p.into_inner());
     if let Some(handle) = current.as_ref() {
         mover::cancel(&handle.control);
         Ok(())

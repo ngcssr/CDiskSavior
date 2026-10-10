@@ -55,3 +55,13 @@ npx @tauri-apps/cli build --bundles nsis
 - TreeMap 为条形图简化版（d3-hierarchy 待接入）
 - MFT 扫描服务未实现（当前用 jwalk 慢速路径）
 - 注册表冗余扫描 / 图标缓存 / 上下文菜单为占位（返回空列表）
+
+## 便携版
+
+```
+dist-portable/CDisk Savior.exe    # 10.4MB，双击即运行
+```
+
+- 自包含单文件（WebView2 为 Windows 10+ 系统组件，无需额外安装）
+- 数据存放于 `%LOCALAPPDATA%\com.cdisksavior.app`（跨位置迁移数据保留）
+- 同目录附 NSIS 安装版 `CDisk Savior_0.1.0_安装版.exe`（可选）
