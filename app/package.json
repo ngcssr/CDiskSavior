@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "build:svc": "cargo build --release --manifest-path src-tauri/Cargo.toml --bin cdisk-savior-svc"
+    "build:svc": "node scripts/build-svc.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

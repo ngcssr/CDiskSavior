@@ -115,7 +115,24 @@ export default function Settings() {
             <span className={`rounded-full px-3 py-1 ${serviceAvail ? "bg-[var(--color-safe)]/10 text-[var(--color-safe)]" : "bg-[var(--color-text-secondary)]/10 text-[var(--color-text-secondary)]"}`}>
               {serviceAvail ? "已注册" : "未注册"}
             </span>
-            {!serviceAvail && <span className="text-xs">秒级扫描未启用，回退到 jwalk 慢速路径</span>}
+            {!serviceAvail && (
+              <>
+                <span className="text-xs">秒级扫描未启用，回退到 jwalk 慢速路径</span>
+                <button
+                  onClick={async () => {
+                    try {
+                      await api_settings.repair_scan_service();
+                      setServiceAvail(await api_settings.scan_service_available());
+                    } catch (e: any) {
+                      alert(e?.message ?? String(e));
+                    }
+                  }}
+                  className="rounded-lg bg-[var(--color-primary)] px-3 py-1 text-xs text-white"
+                >
+                  一键修复（需 UAC）
+                </button>
+              </>
+            )}
           </div>
         </section>
 

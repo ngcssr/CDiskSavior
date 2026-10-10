@@ -8,6 +8,8 @@ mod growth;
 mod health;
 mod commands;
 mod icon;
+pub mod knowledge;
+pub mod mft_scan;
 mod registry_clean;
 mod relocate_commands;
 mod relocate;
@@ -16,6 +18,8 @@ mod shell_icons;
 mod slim;
 mod slim_commands;
 mod state;
+pub mod svc;
+pub mod svc_client;
 mod tune;
 
 // P1 骨架 + P2 M4 空间腾挪命令

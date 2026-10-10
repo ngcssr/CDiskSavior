@@ -17,6 +17,7 @@ pub struct TreeNode {
     pub friendly_name: Option<String>,
     pub description: Option<String>,
     pub safety: String,
+    #[serde(default)]
     pub children: Vec<TreeNode>,
 }
 

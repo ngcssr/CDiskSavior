@@ -21,9 +21,19 @@
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
+  ; C1：安装 MFT 扫描服务（perMachine 已是管理员；OnDemand 注册，不启动常驻进程）
+  ; 失败不阻断安装——主程序扫描会回退 jwalk 慢速遍历，设置页可一键修复
+  IfFileExists "$INSTDIR\cdisk-savior-svc.exe" 0 done_svc_install
+  ExecWait '"$INSTDIR\cdisk-savior-svc.exe" install' $0
+  done_svc_install:
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
+  ; C1：先卸载 MFT 扫描服务（停止+删除注册项），再走文件清理
+  IfFileExists "$INSTDIR\cdisk-savior-svc.exe" 0 done_svc_uninstall
+  ExecWait '"$INSTDIR\cdisk-savior-svc.exe" uninstall' $0
+  done_svc_uninstall:
+
   ; Q8 决策：卸载不自动恢复迁移（目标盘可能缺失，自动恢复有数据丢失风险），
   ; 但检测到未恢复迁移记录时警告提示（迁移历史存在即视为有未恢复项——
   ; 恢复完成的记录会从历史中移除）。

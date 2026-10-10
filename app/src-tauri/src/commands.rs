@@ -44,10 +44,25 @@ pub fn pagefile_check() -> Result<serde_json::Value, String> {
 /// 扫描驱动器（jwalk 并行目录树 → TreeNode）
 /// async + spawn_blocking：全盘扫描可能数秒，不阻塞主线程
 #[tauri::command]
-pub async fn scan_drive(root: String) -> Result<crate::scan::TreeNode, String> {
-    tauri::async_runtime::spawn_blocking(move || crate::scan::scan_directory(&root))
-        .await
-        .map_err(|e| format!("扫描任务失败: {}", e))?
+pub async fn scan_drive(app: tauri::AppHandle, root: String) -> Result<crate::scan::TreeNode, String> {
+    use tauri::Emitter;
+    tauri::async_runtime::spawn_blocking(move || {
+        // MFT 服务快速路径：服务可用且目标是盘符根目录时走秒级扫描，
+        // 任何失败（未安装/权限/非盘符）静默回退 jwalk 遍历
+        if crate::svc_client::service_installed() {
+            if let Ok(tree) = crate::svc_client::scan_via_service(&root, |files, bytes, percent, phase| {
+                let _ = app.emit("disk-growth:progress", serde_json::json!({
+                    "filesScanned": files, "bytesScanned": bytes,
+                    "percent": percent, "phase": phase, "engine": "mft",
+                }));
+            }) {
+                return Ok(tree);
+            }
+        }
+        crate::scan::scan_directory(&root)
+    })
+    .await
+    .map_err(|e| format!("扫描任务失败: {}", e))?
 }
 
 /// 扫描指定目录
@@ -818,13 +833,13 @@ pub async fn collect_rules(include_drives: bool) -> Result<crate::collector::Col
 
 #[tauri::command]
 pub fn scan_service_available() -> bool {
-    // P8 前服务未实现
-    false
+    crate::svc_client::service_installed()
 }
 
+/// 一键修复扫描服务：提权运行 cdisk-savior-svc.exe install（弹一次 UAC）
 #[tauri::command]
 pub fn repair_scan_service() -> Result<(), String> {
-    Err("CDiskSaviorSvc 待 P8 实现".into())
+    crate::svc_client::repair_service()
 }
 
 #[tauri::command]
