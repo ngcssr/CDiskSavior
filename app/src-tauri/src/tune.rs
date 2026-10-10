@@ -86,17 +86,49 @@ pub fn list_items() -> Vec<StartupItem> {
     out
 }
 
-/// 切换启用状态（V27：id 格式校验；HKLM 需提权）
+/// 切换启用状态（V27：id 格式校验 + **存在性复验**——已消失的启动项拒绝写入；
+/// HKLM 需提权）
 pub fn set_enabled(id: &str, enabled: bool) -> Result<(), String> {
     let Some((kind, name)) = id.split_once("::") else {
         return Err("无效的启动项标识".into());
     };
+    // V27：写入前复验启动项真实存在，防止对孤儿 id 静默写入无效值
+    if !entry_exists(kind, name) {
+        return Err(format!("启动项已不存在，请重新扫描: {}", name));
+    }
     match kind {
         "hkcu-run" => write_enabled(HKEY_CURRENT_USER, APPROVED_RUN, name, enabled),
         "hklm-run" => write_enabled(HKEY_LOCAL_MACHINE, APPROVED_RUN, name, enabled),
         "user-folder" => write_enabled(HKEY_CURRENT_USER, APPROVED_FOLDER, name, enabled),
         "common-folder" => write_enabled(HKEY_LOCAL_MACHINE, APPROVED_FOLDER, name, enabled),
         _ => Err("无效的启动项类型".into()),
+    }
+}
+
+/// V27 存在性复验：Run 键查值是否存在；启动文件夹查文件是否存在
+fn entry_exists(kind: &str, name: &str) -> bool {
+    match kind {
+        "hkcu-run" => RegKey::predef(HKEY_CURRENT_USER)
+            .open_subkey_with_flags(RUN_KEY, KEY_READ)
+            .map(|k| k.get_raw_value(name).is_ok())
+            .unwrap_or(false),
+        "hklm-run" => RegKey::predef(HKEY_LOCAL_MACHINE)
+            .open_subkey_with_flags(RUN_KEY, KEY_READ)
+            .map(|k| k.get_raw_value(name).is_ok())
+            .unwrap_or(false),
+        "user-folder" => std::env::var_os("APPDATA")
+            .map(|d| std::path::PathBuf::from(d)
+                .join(r"Microsoft\Windows\Start Menu\Programs\Startup")
+                .join(name)
+                .exists())
+            .unwrap_or(false),
+        "common-folder" => std::env::var_os("ProgramData")
+            .map(|d| std::path::PathBuf::from(d)
+                .join(r"Microsoft\Windows\Start Menu\Programs\Startup")
+                .join(name)
+                .exists())
+            .unwrap_or(false),
+        _ => false,
     }
 }
 
@@ -168,8 +200,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn decode_reg_string_utf16() {
-        let s = "C:\\Program Files\\Test 中文";
+    fn v27_rejects_nonexistent_entry() {
+        // 不存在的启动项：set_enabled 必须拒绝（存在性复验）
+        let r = set_enabled("hkcu-run::CDiskSaviorNonExistent9f8e7d", true);
+        assert!(r.is_err());
+        assert!(r.unwrap_err().contains("已不存在"));
+        // 非法 kind：同样拒绝
+        assert!(set_enabled("bogus-kind::whatever", false).is_err());
+        // 非法 id 格式：拒绝
+        assert!(set_enabled("no-separator", true).is_err());
+    }
+
+    #[test]
+    fn decode_reg_string_utf16() {        let s = "C:\\Program Files\\Test 中文";
         let mut bytes: Vec<u8> = Vec::new();
         for u in s.encode_utf16() {
             bytes.extend_from_slice(&u.to_le_bytes());

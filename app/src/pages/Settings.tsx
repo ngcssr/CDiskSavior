@@ -91,6 +91,23 @@ export default function Settings() {
           <div className="mt-1 text-xs text-[var(--color-text-secondary)]">扫描缓存与清理统计（同名文件保留新值，不覆盖）</div>
         </section>
 
+        {/* 检查更新（Q1：updater 已移除，保留灰置入口，接入自有发布仓库后恢复） */}
+        <section className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] p-4">
+          <h2 className="mb-3 text-sm font-semibold text-[var(--color-text-secondary)]">检查更新</h2>
+          <div className="flex items-center gap-3">
+            <button
+              disabled
+              title="预留接口：接入自有发布仓库后恢复（当前版本零网络设计）"
+              className="cursor-not-allowed rounded-lg bg-[var(--color-surface-hover)] px-4 py-2 text-sm opacity-40"
+            >
+              检查更新（暂未开放）
+            </button>
+            <span className="text-xs text-[var(--color-text-secondary)]">
+              当前版本零网络设计，更新能力预留接口
+            </span>
+          </div>
+        </section>
+
         {/* 扫描服务 */}
         <section className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] p-4">
           <h2 className="mb-3 text-sm font-semibold text-[var(--color-text-secondary)]">MFT 扫描服务</h2>
