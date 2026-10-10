@@ -1,4 +1,5 @@
 mod cleaner;
+mod growth;
 mod health;
 mod commands;
 mod relocate_commands;
@@ -24,6 +25,10 @@ pub fn run() {
             // M2 磁盘透视
             commands::scan_drive,
             commands::scan_dir,
+            commands::scan_hotspot,
+            commands::create_disk_snapshot,
+            commands::compare_disk_growth,
+            commands::has_disk_snapshot,
             commands::load_scan_cache,
             // M3 一键清理
             commands::list_cleanup_items,

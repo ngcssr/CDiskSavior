@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { api_insight } from "../api/commands";
-import { ChevronRight, RefreshCw, Folder } from "lucide-react";
+import { ChevronRight, RefreshCw, Folder, TrendingUp } from "lucide-react";
 
 type TreeNode = {
   name: string; path: string; size: number; isDir: boolean; hasChildren: boolean;
@@ -27,6 +27,14 @@ export default function Insight() {
   const [stack, setStack] = useState<TreeNode[]>([]); // 面包屑路径
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<"tree" | "hotspot" | "growth">("tree");
+  // 热点
+  const [hotspot, setHotspot] = useState<import("../api/commands").HotspotReport | null>(null);
+  const [hotspotLoading, setHotspotLoading] = useState(false);
+  // 增长
+  const [growth, setGrowth] = useState<import("../api/commands").GrowthReport | null>(null);
+  const [growthLoading, setGrowthLoading] = useState(false);
+  const [hasBaseline, setHasBaseline] = useState(false);
 
   const scan = useCallback(async (path: string, pushToStack: boolean) => {
     setLoading(true);
@@ -35,10 +43,8 @@ export default function Insight() {
       const result = await api_insight.scan_drive(path);
       setTree(result);
       if (pushToStack) {
-        // 下钻：压栈（面包屑累积）
         setStack((s) => [...s, { ...result, name: path }]);
       } else {
-        // 回退/刷新：截断到该路径
         setStack((s) => {
           const idx = s.findIndex((n) => n.path === path);
           return idx >= 0 ? s.slice(0, idx + 1) : [{ ...result, name: path }];
@@ -51,10 +57,48 @@ export default function Insight() {
     }
   }, []);
 
-  // 首次加载：扫描 C:\
+  // 首次加载：扫描 C:\ + 检查基线
   useEffect(() => {
     scan("C:\\", false);
+    api_insight.has_disk_snapshot("C:\\").then(setHasBaseline).catch(() => {});
   }, [scan]);
+
+  const runHotspot = async () => {
+    setHotspotLoading(true);
+    setError(null);
+    try {
+      setHotspot(await api_insight.scan_hotspot());
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setHotspotLoading(false);
+    }
+  };
+
+  const createBaseline = async () => {
+    setGrowthLoading(true);
+    try {
+      await api_insight.create_disk_snapshot("C:\\");
+      setHasBaseline(true);
+      setGrowth(await api_insight.compare_disk_growth("C:\\"));
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setGrowthLoading(false);
+    }
+  };
+
+  const runGrowth = async () => {
+    setGrowthLoading(true);
+    setError(null);
+    try {
+      setGrowth(await api_insight.compare_disk_growth("C:\\"));
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setGrowthLoading(false);
+    }
+  };
 
   const drillInto = (node: TreeNode) => {
     if (!node.isDir) return;
@@ -95,14 +139,35 @@ export default function Insight() {
             </span>
           ))}
         </div>
+
+        {/* 视图切换 */}
+        <div className="flex gap-1 rounded-lg bg-[var(--color-surface-hover)] p-0.5">
+          {([["tree", "目录树"], ["hotspot", "热点"], ["growth", "增长"]] as const).map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() => {
+                setTab(id);
+                if (id === "hotspot" && !hotspot && !hotspotLoading) runHotspot();
+                if (id === "growth" && !growth && hasBaseline && !growthLoading) runGrowth();
+              }}
+              className="rounded-md px-3 py-1 text-xs font-medium transition-all"
+              style={{
+                background: tab === id ? "var(--color-surface)" : "transparent",
+                color: tab === id ? "var(--color-primary)" : "var(--color-text-secondary)",
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* 内容区 */}
       <div className="flex-1 overflow-y-auto p-4">
-        {loading && <div className="text-center text-[var(--color-text-secondary)]">扫描中…</div>}
-        {error && <div className="text-center text-[var(--color-danger)]">{error}</div>}
+        {tab === "tree" && loading && <div className="text-center text-[var(--color-text-secondary)]">扫描中…</div>}
+        {error && <div className="mb-4 rounded-xl border border-[var(--color-danger)]/30 bg-[var(--color-danger-bg-soft)] px-4 py-3 text-sm text-[var(--color-danger-text)]">{error}</div>}
 
-        {tree && !loading && (
+        {tab === "tree" && tree && !loading && (
           <>
             {/* TreeMap 简化版：水平条形图（P3 阶段；d3-hierarchy 在 P5 接入） */}
             <div className="mb-6">
@@ -156,6 +221,119 @@ export default function Insight() {
               <span>{tree.children?.length ?? 0}</span>
             </div>
           </>
+        )}
+
+        {/* ===== 热点目录 tab ===== */}
+        {tab === "hotspot" && (
+          <div>
+            {hotspotLoading && <div className="pulse p-8 text-center text-sm text-[var(--color-text-secondary)]">正在扫描 AppData 大目录…</div>}
+            {hotspot && !hotspotLoading && (
+              <>
+                <div className="mb-3 rounded-xl bg-[var(--color-surface-hover)] px-4 py-2 text-sm">
+                  扫描 {hotspot.scannedFolders} 个目录（{(hotspot.durationMs / 1000).toFixed(1)}s），{hotspot.entries.length} 个大目录上榜（&gt;10MB）
+                </div>
+                <div className="space-y-1">
+                  {hotspot.entries.map((e) => {
+                    const maxSize = hotspot.entries[0]?.totalSize ?? 1;
+                    const ratio = e.totalSize / maxSize;
+                    return (
+                      <div key={e.path} className="group rounded-lg px-3 py-2 hover:bg-[var(--color-surface-hover)]">
+                        <div className="flex items-center gap-3">
+                          <div className="w-44 truncate text-sm font-medium">
+                            {e.name}
+                            {e.isCache && <span className="ml-1.5 rounded-full bg-[var(--color-safe)]/10 px-1.5 py-0.5 text-[10px] text-[var(--color-safe)]">缓存</span>}
+                          </div>
+                          <div className="relative h-4 flex-1 overflow-hidden rounded bg-[var(--color-surface-hover)]">
+                            <div className="bar-fill h-full rounded" style={{ width: `${Math.max(ratio * 100, 2)}%`, background: e.isCache ? "var(--color-safe)" : "var(--color-primary)" }} />
+                          </div>
+                          <span className="font-num w-20 text-right text-xs text-[var(--color-text-secondary)]">{formatSize(e.totalSize)}</span>
+                        </div>
+                        <div className="mt-0.5 flex justify-between pl-0 text-[10px] text-[var(--color-text-dim)]">
+                          <span className="truncate font-mono">{e.path}</span>
+                          <span className="shrink-0">{e.fileCount.toLocaleString()} 个文件</span>
+                        </div>
+                        {e.children.length > 0 && (
+                          <div className="mt-1.5 space-y-0.5 border-l-2 border-[var(--color-line)] pl-3">
+                            {e.children.map((c) => (
+                              <div key={c.path} className="flex items-center gap-2 text-xs">
+                                <span className="w-40 truncate text-[var(--color-text-secondary)]">└ {c.name}</span>
+                                <span className="font-num text-[var(--color-text-dim)]">{formatSize(c.totalSize)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ===== 增长对比 tab ===== */}
+        {tab === "growth" && (
+          <div>
+            {!hasBaseline ? (
+              <div className="card mx-auto mt-10 max-w-md p-6 text-center">
+                <TrendingUp size={28} className="mx-auto mb-3 text-[var(--color-primary)]" />
+                <div className="mb-2 text-sm font-semibold">尚未创建基线快照</div>
+                <p className="mb-4 text-xs text-[var(--color-text-secondary)]">
+                  先创建一次基线，之后每次对比就能看出哪些目录在增长
+                </p>
+                <button onClick={createBaseline} disabled={growthLoading} className="btn btn-primary">
+                  {growthLoading ? "创建中…" : "创建基线快照"}
+                </button>
+              </div>
+            ) : growthLoading ? (
+              <div className="pulse p-8 text-center text-sm text-[var(--color-text-secondary)]">对比计算中…</div>
+            ) : growth ? (
+              <>
+                <div className="mb-3 flex items-center justify-between rounded-xl bg-[var(--color-surface-hover)] px-4 py-2 text-sm">
+                  <span>
+                    基线 {new Date(growth.baselineAt * 1000).toLocaleString("zh-CN")}（{growth.timeSpanHours.toFixed(1)} 小时前）
+                    · 总增长 <strong>{formatSize(Math.max(growth.totalGrowth, 0))}</strong>
+                  </span>
+                  <div className="flex gap-2">
+                    <button onClick={runGrowth} className="btn text-xs">重新对比</button>
+                    <button onClick={createBaseline} className="btn text-xs">重置基线</button>
+                  </div>
+                </div>
+                {growth.entries.length === 0 ? (
+                  <div className="p-8 text-center text-sm text-[var(--color-text-secondary)]">与基线相比无显著变化</div>
+                ) : (
+                  <div className="space-y-1">
+                    {growth.entries.map((e) => (
+                      <div key={e.path} className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-[var(--color-surface-hover)]">
+                        <span className="chip shrink-0" style={{
+                          color: e.level === "significant" ? "var(--color-danger)" : e.level === "fast" ? "var(--color-caution)" : e.level === "new" ? "var(--color-primary)" : "var(--color-safe)",
+                        }}>
+                          {e.level === "significant" ? "激增" : e.level === "fast" ? "快增" : e.level === "new" ? "新增" : "减少"}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="truncate text-sm">{e.name}</div>
+                          <div className="truncate font-mono text-[10px] text-[var(--color-text-dim)]">{e.path}</div>
+                        </div>
+                        <div className="font-num shrink-0 text-right text-xs">
+                          <div style={{ color: e.diff > 0 ? "var(--color-danger)" : "var(--color-safe)" }}>
+                            {e.diff > 0 ? "+" : ""}{formatSize(Math.abs(e.diff))}
+                            {e.oldSize > 0 && ` (${e.diffPercent > 0 ? "+" : ""}${e.diffPercent.toFixed(0)}%)`}
+                          </div>
+                          <div className="text-[10px] text-[var(--color-text-dim)]">
+                            {formatSize(e.oldSize)} → {formatSize(e.newSize)}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="p-8 text-center">
+                <button onClick={runGrowth} className="btn btn-primary">开始对比</button>
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>

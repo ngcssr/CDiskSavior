@@ -58,6 +58,36 @@ pub async fn scan_dir(path: String) -> Result<crate::scan::TreeNode, String> {
         .map_err(|e| format!("扫描任务失败: {}", e))?
 }
 
+/// 热点目录排行（AppData 大目录，>10MB 上榜，>5GB 智能下钻）
+#[tauri::command]
+pub async fn scan_hotspot(path: Option<String>) -> Result<crate::growth::HotspotReport, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::growth::scan_hotspot(path.as_deref()))
+        .await
+        .map_err(|e| format!("扫描失败: {}", e))
+}
+
+/// 创建磁盘增长基线快照
+#[tauri::command]
+pub async fn create_disk_snapshot(drive: String) -> Result<u64, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::growth::create_snapshot(&drive))
+        .await
+        .map_err(|e| format!("快照失败: {}", e))?
+}
+
+/// 对比磁盘增长（与基线快照）
+#[tauri::command]
+pub async fn compare_disk_growth(drive: String) -> Result<crate::growth::GrowthReport, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::growth::compare_growth(&drive))
+        .await
+        .map_err(|e| format!("对比失败: {}", e))?
+}
+
+/// 是否已有基线快照
+#[tauri::command]
+pub fn has_disk_snapshot(drive: String) -> bool {
+    crate::growth::has_baseline(&drive)
+}
+
 #[tauri::command]
 pub fn load_scan_cache(root: String) -> Option<serde_json::Value> {
     let _ = root;

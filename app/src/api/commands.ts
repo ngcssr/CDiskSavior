@@ -35,8 +35,11 @@ export const api_insight = {
   get_disk_growth_file_details: (p: string) => invoke<GrowthFileDetails>("get_disk_growth_file_details", { path: p }),
   get_disk_growth_export_tree: () => invoke<GrowthTree>("get_disk_growth_export_tree"),
   save_disk_growth_html: (content: string, name: string) => invoke<string | null>("save_disk_growth_html", { content, default_file_name: name, dialog_title: "导出增长报告" }),
-  scan_hotspot: () => invoke<HotspotReport>("scan_hotspot"),
+  scan_hotspot: (path?: string) => invoke<HotspotReport>("scan_hotspot", { path }),
   cancel_hotspot_scan: () => invoke<void>("cancel_hotspot_scan"),
+  create_disk_snapshot: (drive: string) => invoke<number>("create_disk_snapshot", { drive }),
+  compare_disk_growth: (drive: string) => invoke<GrowthReport>("compare_disk_growth", { drive }),
+  has_disk_snapshot: (drive: string) => invoke<boolean>("has_disk_snapshot", { drive }),
   scan_large_files: () => invoke<LargeFileReport>("scan_large_files"),
   cancel_large_file_scan: () => invoke<void>("cancel_large_file_scan"),
   scan_path_direct: (p: string) => invoke<TreeNode>("scan_path_direct", { path: p }),
@@ -191,11 +194,9 @@ export type TreeNode = {
   children?: TreeNode[];
 };
 export type ScanCache = { scannedAt: number; root: string; tree: TreeNode };
-export type GrowthReport = unknown;
 export type GrowthDirDetails = unknown;
 export type GrowthFileDetails = unknown;
 export type GrowthTree = unknown;
-export type HotspotReport = unknown;
 export type LargeFileReport = unknown;
 export type CleanupScan = { items: CleanupItem[]; totalSize: number };
 export type CleanupReport = { freed: number; freeBefore: number; freeAfter: number; errors: string[]; skipped: string[] };
@@ -300,3 +301,18 @@ export type SocialApp = {
 };
 export type SocialScan = { apps: SocialApp[]; totalSize: number; deletableSize: number };
 export type SocialDeleteReport = { freed: number; errors: string[] };
+
+// 热点与增长
+export type HotspotEntry = {
+  path: string; name: string; totalSize: number; fileCount: number;
+  lastModified: number; isCache: boolean; children: HotspotEntry[];
+};
+export type HotspotReport = { entries: HotspotEntry[]; scannedFolders: number; durationMs: number };
+export type GrowthEntry = {
+  path: string; name: string; oldSize: number; newSize: number;
+  diff: number; diffPercent: number; level: string;
+};
+export type GrowthReport = {
+  entries: GrowthEntry[]; totalGrowth: number; baselineAt: number;
+  timeSpanHours: number; hasBaseline: boolean;
+};
