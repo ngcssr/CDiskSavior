@@ -40,6 +40,8 @@ pub fn run() {
             commands::list_leftover_whitelist,
             commands::add_leftover_whitelist_entry,
             commands::remove_leftover_whitelist_entry,
+            commands::scan_social_cache,
+            commands::delete_social_cache,
             // M4 空间腾挪（P2 实现）
             relocate_commands::scan_relocate_targets,
             relocate_commands::list_locking_processes,

@@ -57,7 +57,8 @@ export const api_clean = {
   get_deep_junk_category_page: (cat: string, page: number) => invoke<DeepJunkPage>("get_deep_junk_category_page", { category: cat, page }),
   scan_category: (cat: string) => invoke<CategoryReport>("scan_category", { category: cat }),
   get_categories: () => invoke<Category[]>("get_categories"),
-  scan_social_cache: () => invoke<SocialCacheReport>("scan_social_cache"),
+  scan_social_cache: () => invoke<SocialScan>("scan_social_cache"),
+  delete_social_cache: (app: string, categories: string[]) => invoke<SocialDeleteReport>("delete_social_cache", { app, categories }),
   scan_uninstall_leftovers: () => invoke<LeftoverScan>("scan_uninstall_leftovers"),
   check_leftover_safety: (p: string) => invoke<LeftoverSafety>("check_leftover_safety", { path: p }),
   delete_leftovers: (paths: string[]) => invoke<LeftoverDeleteReport>("delete_leftovers", { paths }),
@@ -289,3 +290,13 @@ export type HealthScore = {
   diskFreePercent: number; hasHibernation: boolean; hibernationSize: number;
   junkSize: number; grade: string;
 };
+
+// 社交缓存类型
+export type SocialCategory = {
+  category: string; risk: string; size: number; fileCount: number; deletable: boolean;
+};
+export type SocialApp = {
+  app: string; dataDirs: string[]; categories: SocialCategory[]; totalSize: number;
+};
+export type SocialScan = { apps: SocialApp[]; totalSize: number; deletableSize: number };
+export type SocialDeleteReport = { freed: number; errors: string[] };

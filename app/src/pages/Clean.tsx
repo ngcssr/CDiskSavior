@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { api_clean } from "../api/commands";
 import {
-  Trash2, RefreshCw, AlertTriangle, FolderX, Layers, X,
+  Trash2, RefreshCw, AlertTriangle, FolderX, Layers, X, MessageSquare,
 } from "lucide-react";
 
 type CleanupItem = {
@@ -55,6 +55,9 @@ export default function Clean() {
   const [deep, setDeep] = useState<import("../api/commands").DeepScanResult | null>(null);
   const [deepScanning, setDeepScanning] = useState(false);
   const [deepSelected, setDeepSelected] = useState<Set<string>>(new Set());
+  // 社交缓存状态
+  const [social, setSocial] = useState<import("../api/commands").SocialScan | null>(null);
+  const [socialDeleting, setSocialDeleting] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setScanning(true);
@@ -68,8 +71,9 @@ export default function Clean() {
       setItems(scan.items);
       setStats(st);
       setLeftovers(lo);
-      // 高置信度默认勾选
       setLeftoverSelected(new Set(lo.high.map((e) => e.path)));
+      // 社交缓存独立加载（扫描较慢，失败不阻塞）
+      api_clean.scan_social_cache().then(setSocial).catch(() => {});
     } catch (e: any) {
       setError(e?.message ?? String(e));
     } finally {
@@ -183,6 +187,21 @@ export default function Clean() {
       await refresh();
     } catch (e: any) {
       setError(e?.message ?? String(e));
+    }
+  };
+
+  // 社交缓存删除（按应用 + 类别；数据库类别后端硬拒绝）
+  const deleteSocial = async (app: string, categories: string[]) => {
+    setSocialDeleting(app);
+    try {
+      const r = await api_clean.delete_social_cache(app, categories);
+      setResult({ freed: r.freed, errors: r.errors, skipped: [] });
+      const s2 = await api_clean.scan_social_cache();
+      setSocial(s2);
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setSocialDeleting(null);
     }
   };
 
@@ -470,6 +489,58 @@ export default function Clean() {
                 </div>
               </>
             )}
+          </section>
+        )}
+
+        {/* 社交软件缓存（四级风险分类） */}
+        {social && social.apps.length > 0 && (
+          <section className="mb-6">
+            <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text-secondary)]">
+              <MessageSquare size={14} /> 社交软件缓存（共 {fmt(social.totalSize)}，可安全清理 {fmt(social.deletableSize)}）
+            </h2>
+            <div className="space-y-2">
+              {social.apps.map((app) => {
+                const deletableCats = app.categories.filter((c) => c.deletable);
+                const safeCats = deletableCats.filter((c) => c.risk === "none" || c.risk === "low");
+                const safeSize = safeCats.reduce((s, c) => s + c.size, 0);
+                return (
+                  <div key={app.app} className="card p-3.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold">{app.app}</span>
+                        <span className="font-num text-xs text-[var(--color-text-secondary)]">{fmt(app.totalSize)}</span>
+                      </div>
+                      {safeSize > 0 && (
+                        <button
+                          onClick={() => deleteSocial(app.app, safeCats.map((c) => c.category))}
+                          disabled={socialDeleting !== null}
+                          className="flex items-center gap-1.5 rounded-lg bg-[var(--color-danger-bg-soft)] px-3 py-1 text-xs text-[var(--color-danger-text)] disabled:opacity-50"
+                        >
+                          <Trash2 size={12} />
+                          {socialDeleting === app.app ? "清理中…" : `清理缓存+媒体（${fmt(safeSize)}）`}
+                        </button>
+                      )}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {app.categories.map((c) => (
+                        <span
+                          key={c.category}
+                          className="chip"
+                          title={c.risk === "critical" ? "聊天记录数据库，永不删除" : c.risk === "medium" ? "接收的文件，请手动确认" : "可清理"}
+                          style={{
+                            color: c.risk === "critical" ? "var(--color-danger)" : c.risk === "medium" ? "var(--color-caution)" : "var(--color-safe)",
+                            borderColor: c.risk === "critical" ? "rgba(248,113,113,0.3)" : c.risk === "medium" ? "rgba(251,191,36,0.3)" : "rgba(52,211,153,0.3)",
+                          }}
+                        >
+                          {c.category === "database" ? "聊天记录(保护)" : c.category === "files" ? "接收文件" : c.category === "media" ? "图片视频" : "缓存日志"}
+                          {" "}{fmt(c.size)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </section>
         )}
       </div>

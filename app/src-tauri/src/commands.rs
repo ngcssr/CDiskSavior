@@ -174,6 +174,24 @@ pub fn remove_leftover_whitelist_entry(entry: String) -> Result<(), String> {
     crate::cleaner::leftovers::remove_whitelist(&entry)
 }
 
+// ============ M3 社交缓存（light-c social_scanner 移植） ============
+
+/// 社交软件缓存扫描（微信/QQ/钉钉/飞书/企微，四级风险分类）
+#[tauri::command]
+pub async fn scan_social_cache() -> Result<crate::cleaner::social::SocialScan, String> {
+    tauri::async_runtime::spawn_blocking(crate::cleaner::social::scan)
+        .await
+        .map_err(|e| format!("扫描失败: {}", e))
+}
+
+/// 删除社交缓存（CRITICAL 数据库硬拒绝）
+#[tauri::command]
+pub async fn delete_social_cache(app: String, categories: Vec<String>) -> Result<crate::cleaner::social::SocialDeleteReport, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::cleaner::social::delete(&app, &categories))
+        .await
+        .map_err(|e| format!("删除失败: {}", e))
+}
+
 // ============ M6 启动与内存（P6 真实实现） ============
 
 #[tauri::command]
