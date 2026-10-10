@@ -151,12 +151,16 @@ pub async fn run_deep_clean(app: tauri::AppHandle, ids: Vec<String>) -> Result<c
 }
 
 #[tauri::command]
-pub fn run_deep_clean_system() -> Result<serde_json::Value, String> {
-    // R4 提权：清 Windows\Temp + SoftwareDistribution\Download
-    let script = r#"Remove-Item -Recurse -Force "$env:SystemRoot\Temp\*" -EA SilentlyContinue;
-                    Remove-Item -Recurse -Force "$env:SystemRoot\SoftwareDistribution\Download\*" -EA SilentlyContinue"#;
-    crate::slim::run_elevated_ps_pub(script)?;
-    Ok(serde_json::json!({ "result": "system temp cleaned" }))
+pub async fn run_deep_clean_system() -> Result<serde_json::Value, String> {
+    // R4 提权：清 Windows\Temp + SoftwareDistribution\Download（DISM 级耗时）
+    tauri::async_runtime::spawn_blocking(|| {
+        let script = r#"Remove-Item -Recurse -Force "$env:SystemRoot\Temp\*" -EA SilentlyContinue;
+                        Remove-Item -Recurse -Force "$env:SystemRoot\SoftwareDistribution\Download\*" -EA SilentlyContinue"#;
+        crate::slim::run_elevated_ps_pub(script)?;
+        Ok(serde_json::json!({ "result": "system temp cleaned" }))
+    })
+    .await
+    .map_err(|e| format!("清理失败: {}", e))?
 }
 
 #[tauri::command]

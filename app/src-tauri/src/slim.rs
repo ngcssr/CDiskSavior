@@ -337,15 +337,36 @@ pub fn run_elevated_ps_pub(script: &str) -> Result<String, String> {
 
 /// 按操作提权执行 PowerShell 脚本（R4 模型：disk-butler run_elevated_ps 蓝本）
 ///
-/// 脚本经 UTF-16LE+Base64 编码内联 -EncodedCommand，
-/// 不向 %TEMP% 落地 .ps1，marker 文件确认真实执行。
+/// 脚本经 UTF-16LE+Base64 编码内联 -EncodedCommand，不向 %TEMP% 落地 .ps1。
+///
+/// UAC 取消检测（marker 文件方案）：
+/// Start-Process -Verb RunAs 在用户取消时向外层抛异常（外层退出码 1，非 1223），
+/// 1223 检测永远不命中。改用 marker：提权脚本末尾写标记文件，
+/// 执行后检查 marker 是否存在——存在=真实执行，缺失=用户取消。
 fn run_elevated_ps(script: &str) -> Result<String, String> {
+    // marker 文件路径（%LOCALAPPDATA%\CDiskSavior\elevated_marker_{uuid}）
+    let marker_dir = std::env::var("LOCALAPPDATA")
+        .map(|d| PathBuf::from(d).join("CDiskSavior"))
+        .unwrap_or_else(|_| std::env::temp_dir());
+    let _ = std::fs::create_dir_all(&marker_dir);
+    let marker_id = uuid::Uuid::new_v4().to_string();
+    let marker_path = marker_dir.join(format!("elevated_marker_{}", marker_id));
+    // 清理可能的残留
+    let _ = std::fs::remove_file(&marker_path);
+
+    // 提权脚本 = 用户脚本 + 写 marker
+    let marker_str = marker_path.to_string_lossy().replace('\'', "''");
+    let full_script = format!(
+        "{}; Set-Content -Path '{}' -Value 'done' -ErrorAction SilentlyContinue",
+        script, marker_str
+    );
+
     // 编码：UTF-16LE → Base64
-    let utf16: Vec<u8> = script.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+    let utf16: Vec<u8> = full_script.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
     let encoded = base64_encode(&utf16);
 
     let outer = format!(
-        "Start-Process -Verb RunAs -Wait -PassThru -FilePath powershell.exe \
+        "$null = Start-Process -Verb RunAs -Wait -PassThru -FilePath powershell.exe \
          -ArgumentList '-NoProfile','-EncodedCommand','{}'",
         encoded
     );
@@ -353,18 +374,24 @@ fn run_elevated_ps(script: &str) -> Result<String, String> {
     let result = std::process::Command::new("powershell")
         .args(["-NoProfile", "-Command", &outer])
         .output()
-        .map_err(|e| format!("提权执行失败: {}", e))?;
+        .map_err(|e| format!("提权执行失败: {}", e));
 
-    // 退出码 1223 = 用户取消了 UAC
+    // marker 检查（比退出码可靠：外层取消时退出码是 1 不是 1223）
+    let marker_exists = marker_path.exists();
+    let _ = std::fs::remove_file(&marker_path); // 清理
+
+    let result = result?;
+    if marker_exists {
+        // 提权脚本真实执行过（即使有非致命错误也算成功路径）
+        return Ok(String::from_utf8_lossy(&result.stdout).to_string());
+    }
+
+    // marker 不存在 → 提权进程从未启动
     let code = result.status.code().unwrap_or(-1);
-    if code == 1223 {
-        return Err("用户取消了管理员授权".into());
+    if code == 1223 || code == 1 || !result.status.success() {
+        return Err("用户取消了管理员授权（或提权被拒绝）".into());
     }
-    if !result.status.success() {
-        return Err(format!("执行失败（退出码 {}）", code));
-    }
-
-    Ok(String::from_utf8_lossy(&result.stdout).to_string())
+    Err(format!("执行失败（退出码 {}）", code))
 }
 
 /// Base64 编码（无外部依赖）

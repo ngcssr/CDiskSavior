@@ -14,3 +14,4 @@ app-icon.png
 
 # 本地环境
 .env*
+dist-portable/

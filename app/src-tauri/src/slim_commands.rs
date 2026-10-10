@@ -11,28 +11,38 @@ pub async fn get_system_slim_status() -> Result<slim::SlimStatus, String> {
 }
 
 #[tauri::command]
-pub fn enable_hibernation() -> Result<String, String> {
-    slim::enable_hibernation()
+pub async fn enable_hibernation() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(slim::enable_hibernation)
+        .await
+        .map_err(|e| format!("执行失败: {}", e))?
 }
 
 #[tauri::command]
-pub fn disable_hibernation() -> Result<String, String> {
-    slim::disable_hibernation()
+pub async fn disable_hibernation() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(slim::disable_hibernation)
+        .await
+        .map_err(|e| format!("执行失败: {}", e))?
 }
 
 #[tauri::command]
-pub fn cleanup_winsxs() -> Result<String, String> {
-    slim::cleanup_winsxs()
+pub async fn cleanup_winsxs() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(slim::cleanup_winsxs)
+        .await
+        .map_err(|e| format!("执行失败: {}", e))?
 }
 
 #[tauri::command]
-pub fn cleanup_winsxs_resetbase() -> Result<String, String> {
-    slim::cleanup_winsxs_resetbase()
+pub async fn cleanup_winsxs_resetbase() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(slim::cleanup_winsxs_resetbase)
+        .await
+        .map_err(|e| format!("执行失败: {}", e))?
 }
 
 #[tauri::command]
-pub fn rebuild_search_index() -> Result<String, String> {
-    slim::rebuild_search_index()
+pub async fn rebuild_search_index() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(slim::rebuild_search_index)
+        .await
+        .map_err(|e| format!("执行失败: {}", e))?
 }
 
 #[tauri::command]
@@ -58,8 +68,10 @@ pub async fn scan_old_drivers() -> Result<Vec<slim::DriverEntry>, String> {
 }
 
 #[tauri::command]
-pub fn delete_old_drivers(ids: Vec<String>) -> Result<u32, String> {
-    slim::delete_old_drivers(&ids)
+pub async fn delete_old_drivers(ids: Vec<String>) -> Result<u32, String> {
+    tauri::async_runtime::spawn_blocking(move || slim::delete_old_drivers(&ids))
+        .await
+        .map_err(|e| format!("执行失败: {}", e))?
 }
 
 #[tauri::command]
@@ -114,8 +126,10 @@ pub fn open_shell_icon_log() -> Result<(), String> { Err("待实现".into()) }
 pub fn open_shell_icon_registry() -> Result<(), String> { Err("待实现".into()) }
 
 #[tauri::command]
-pub fn restart_explorer() -> Result<(), String> {
-    slim::restart_explorer()
+pub async fn restart_explorer() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(slim::restart_explorer)
+        .await
+        .map_err(|e| format!("执行失败: {}", e))?
 }
 
 #[tauri::command]
