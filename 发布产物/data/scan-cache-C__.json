@@ -1,10 +1,10 @@
 {
-  "scannedAt": 1791709346,
+  "scannedAt": 1791714664,
   "root": "C:\\",
   "tree": {
     "name": "C:\\",
     "path": "C:\\",
-    "size": 115367249012,
+    "size": 115981656543,
     "isDir": true,
     "hasChildren": true,
     "category": "unknown",
@@ -15,7 +15,7 @@
       {
         "name": "Users",
         "path": "C:\\Users",
-        "size": 41966021960,
+        "size": 41971511269,
         "isDir": true,
         "hasChildren": true,
         "category": "unknown",
@@ -26,7 +26,7 @@
           {
             "name": "Administrator",
             "path": "C:\\Users\\Administrator",
-            "size": 41342021104,
+            "size": 41347510413,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -76,7 +76,7 @@
       {
         "name": "Windows",
         "path": "C:\\Windows",
-        "size": 28035678303,
+        "size": 28198457375,
         "isDir": true,
         "hasChildren": true,
         "category": "unknown",
@@ -99,7 +99,7 @@
           {
             "name": "System32",
             "path": "C:\\Windows\\System32",
-            "size": 7125546388,
+            "size": 7287413134,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -159,7 +159,7 @@
           {
             "name": "Microsoft.NET",
             "path": "C:\\Windows\\Microsoft.NET",
-            "size": 848728049,
+            "size": 848733273,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -267,7 +267,7 @@
           {
             "name": "ServiceProfiles",
             "path": "C:\\Windows\\ServiceProfiles",
-            "size": 68452951,
+            "size": 68407895,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -303,7 +303,7 @@
           {
             "name": "SoftwareDistribution",
             "path": "C:\\Windows\\SoftwareDistribution",
-            "size": 41217311,
+            "size": 41220435,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -553,6 +553,18 @@
             "children": []
           },
           {
+            "name": "Prefetch",
+            "path": "C:\\Windows\\Prefetch",
+            "size": 1860653,
+            "isDir": true,
+            "hasChildren": false,
+            "category": "unknown",
+            "friendlyName": null,
+            "description": null,
+            "safety": "unknown",
+            "children": []
+          },
+          {
             "name": "DiagTrack",
             "path": "C:\\Windows\\DiagTrack",
             "size": 1705253,
@@ -589,9 +601,9 @@
             "children": []
           },
           {
-            "name": "Prefetch",
-            "path": "C:\\Windows\\Prefetch",
-            "size": 1489719,
+            "name": "Logs",
+            "path": "C:\\Windows\\Logs",
+            "size": 1299797,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -640,18 +652,6 @@
             "name": "SystemTemp",
             "path": "C:\\Windows\\SystemTemp",
             "size": 763236,
-            "isDir": true,
-            "hasChildren": false,
-            "category": "unknown",
-            "friendlyName": null,
-            "description": null,
-            "safety": "unknown",
-            "children": []
-          },
-          {
-            "name": "Logs",
-            "path": "C:\\Windows\\Logs",
-            "size": 637247,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -949,6 +949,18 @@
             "children": []
           },
           {
+            "name": "CSC",
+            "path": "C:\\Windows\\CSC",
+            "size": 68,
+            "isDir": true,
+            "hasChildren": false,
+            "category": "unknown",
+            "friendlyName": null,
+            "description": null,
+            "safety": "unknown",
+            "children": []
+          },
+          {
             "name": "Downloaded Program Files",
             "path": "C:\\Windows\\Downloaded Program Files",
             "size": 65,
@@ -987,18 +999,6 @@
           {
             "name": "CbsTemp",
             "path": "C:\\Windows\\CbsTemp",
-            "size": 0,
-            "isDir": true,
-            "hasChildren": false,
-            "category": "unknown",
-            "friendlyName": null,
-            "description": null,
-            "safety": "unknown",
-            "children": []
-          },
-          {
-            "name": "CSC",
-            "path": "C:\\Windows\\CSC",
             "size": 0,
             "isDir": true,
             "hasChildren": false,
@@ -3570,7 +3570,7 @@
       {
         "name": "Program Files (x86)",
         "path": "C:\\Program Files (x86)",
-        "size": 10490555282,
+        "size": 10489528627,
         "isDir": true,
         "hasChildren": true,
         "category": "unknown",
@@ -3629,7 +3629,7 @@
           {
             "name": "Google",
             "path": "C:\\Program Files (x86)\\Google",
-            "size": 715998431,
+            "size": 714971776,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -4891,7 +4891,7 @@
       {
         "name": "ProgramData",
         "path": "C:\\ProgramData",
-        "size": 5156976095,
+        "size": 5169912748,
         "isDir": true,
         "hasChildren": true,
         "category": "unknown",
@@ -4902,7 +4902,7 @@
           {
             "name": "Microsoft",
             "path": "C:\\ProgramData\\Microsoft",
-            "size": 2293194112,
+            "size": 2306036559,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -4998,7 +4998,7 @@
           {
             "name": "Alibaba",
             "path": "C:\\ProgramData\\Alibaba",
-            "size": 30797247,
+            "size": 30797245,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -5022,7 +5022,7 @@
           {
             "name": "USOShared",
             "path": "C:\\ProgramData\\USOShared",
-            "size": 24109056,
+            "size": 24178688,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -5178,7 +5178,7 @@
           {
             "name": "Packages",
             "path": "C:\\ProgramData\\Packages",
-            "size": 454656,
+            "size": 479232,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -5721,7 +5721,7 @@
       {
         "name": "$RECYCLE.BIN",
         "path": "C:\\$RECYCLE.BIN",
-        "size": 1413708706,
+        "size": 1847917290,
         "isDir": true,
         "hasChildren": true,
         "category": "unknown",
@@ -5732,7 +5732,7 @@
           {
             "name": "S-1-5-21-876982227-1758349715-3841343856-500",
             "path": "C:\\$RECYCLE.BIN\\S-1-5-21-876982227-1758349715-3841343856-500",
-            "size": 1413708577,
+            "size": 1847917161,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -6844,6 +6844,67 @@
         ]
       },
       {
+        "name": "System Volume Information",
+        "path": "C:\\System Volume Information",
+        "size": 20568,
+        "isDir": true,
+        "hasChildren": true,
+        "category": "unknown",
+        "friendlyName": null,
+        "description": null,
+        "safety": "unknown",
+        "children": [
+          {
+            "name": "AadRecoveryPasswordDelete",
+            "path": "C:\\System Volume Information\\AadRecoveryPasswordDelete",
+            "size": 0,
+            "isDir": true,
+            "hasChildren": false,
+            "category": "unknown",
+            "friendlyName": null,
+            "description": null,
+            "safety": "unknown",
+            "children": []
+          },
+          {
+            "name": "ClientRecoveryPasswordRotation",
+            "path": "C:\\System Volume Information\\ClientRecoveryPasswordRotation",
+            "size": 0,
+            "isDir": true,
+            "hasChildren": false,
+            "category": "unknown",
+            "friendlyName": null,
+            "description": null,
+            "safety": "unknown",
+            "children": []
+          },
+          {
+            "name": "EDP",
+            "path": "C:\\System Volume Information\\EDP",
+            "size": 0,
+            "isDir": true,
+            "hasChildren": false,
+            "category": "unknown",
+            "friendlyName": null,
+            "description": null,
+            "safety": "unknown",
+            "children": []
+          },
+          {
+            "name": "Windows Backup",
+            "path": "C:\\System Volume Information\\Windows Backup",
+            "size": 0,
+            "isDir": true,
+            "hasChildren": false,
+            "category": "unknown",
+            "friendlyName": null,
+            "description": null,
+            "safety": "unknown",
+            "children": []
+          }
+        ]
+      },
+      {
         "name": "Recovery",
         "path": "C:\\Recovery",
         "size": 2957,
@@ -7005,18 +7066,6 @@
       {
         "name": "PerfLogs",
         "path": "C:\\PerfLogs",
-        "size": 0,
-        "isDir": true,
-        "hasChildren": false,
-        "category": "unknown",
-        "friendlyName": null,
-        "description": null,
-        "safety": "unknown",
-        "children": []
-      },
-      {
-        "name": "System Volume Information",
-        "path": "C:\\System Volume Information",
         "size": 0,
         "isDir": true,
         "hasChildren": false,
