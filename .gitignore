@@ -28,6 +28,10 @@ rev/src_wclear/
 
 # ---- 运行时/临时 ----
 .tmp/
+
+# ---- 便携版运行时生成的 WebView2 profile（不应入库）----
+webview/
+发布产物/webview/
 tmp/
 *.log
 __pycache__/

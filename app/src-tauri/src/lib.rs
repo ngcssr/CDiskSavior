@@ -57,33 +57,6 @@ pub fn run() {
     anti_tamper::startup_guard(); // C 级防逆向：反调试守卫（release 生效）
     startup_log("after anti_tamper");
 
-    // 便携版：本地 WebView2 数据目录（LightC 同款机制）。
-    // WebView2 profile 若落在 C 盘 %LOCALAPPDATA%（磁盘曾满载/读写慢），
-    // 渲染进程初始化会拖慢十几秒 → 启动白屏。改到 exe 旁 webview/main。
-    let portable_webview_dir: Option<std::path::PathBuf> = if appdata::portable_mode() {
-        let dir = std::env::current_exe()
-            .ok()
-            .and_then(|e| e.parent().map(|p| p.to_path_buf()))
-            .map(|p| p.join("webview").join("main"))
-            .unwrap_or_default();
-        if std::fs::create_dir_all(&dir).is_ok() {
-            startup_log("portable webview dir prepared");
-            Some(dir)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
-    let mut context = tauri::generate_context!();
-    if portable_webview_dir.is_some() {
-        // 阻止 Tauri 自动创建窗口（改为 setup 里手动创建 + data_directory）
-        for wc in &mut context.config_mut().app.windows {
-            wc.create = false;
-        }
-    }
-
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -236,18 +209,8 @@ pub fn run() {
         .on_page_load(|_webview, _payload| {
             startup_log("on_page_load (index.html loaded)");
         })
-        .setup(move |app| {
+        .setup(|app| {
             startup_log("setup enter (WebView created)");
-            // 便携版：手动创建窗口 + 本地 WebView2 data_directory（避免白屏）
-            if let Some(dir) = portable_webview_dir.clone() {
-                use tauri::Manager;
-                let configs = app.config().app.windows.clone();
-                for wc in configs {
-                    tauri::WebviewWindowBuilder::from_config(app.handle(), &wc)?
-                        .data_directory(dir.clone())
-                        .build()?;
-                }
-            }
             // R8: 单实例互斥（修复：句柄必须持有到进程退出，第二个实例直接 exit）
             match state::SingleInstance::new() {
                 Ok(handle) => {
@@ -264,6 +227,6 @@ pub fn run() {
                 Err(true) => Ok(()), // 创建失败，保守放行
             }
         })
-        .run(context)
+        .run(tauri::generate_context!())
         .expect("error while running cdisk-savior");
 }
