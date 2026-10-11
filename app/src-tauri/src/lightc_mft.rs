@@ -19,8 +19,6 @@ use std::fs;
 use std::os::windows::fs::{FileExt, OpenOptionsExt};
 use std::path::PathBuf;
 
-use rayon::prelude::*;
-
 use windows::Win32::Foundation::{CloseHandle, GetLastError, HANDLE, WIN32_ERROR};
 use windows::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
 use windows::Win32::Storage::FileSystem::{
@@ -413,43 +411,34 @@ impl NtfsFileMetadataReader {
                     .map_err(|error| format!("顺序读取 $MFT 失败: {}", error))?;
 
                 let records_before_chunk = bytes_read_in_run / self.file_record_size as u64;
-                // rayon 并行解析本 chunk 内所有记录（CPU 密集，6 核并行 ~3-4x 加速）
-                let chunk_candidates: Vec<Option<(u64, u64, i64)>> = buffer[..aligned_read_len]
-                    .par_chunks_exact(self.file_record_size)
+                for (record_index, record_bytes) in buffer[..aligned_read_len]
+                    .chunks_exact(self.file_record_size)
                     .enumerate()
-                    .map(|(record_index, record_bytes)| {
-                        let record_id = logical_record_id + records_before_chunk + record_index as u64;
-                        if !looks_like_active_file(record_bytes) {
-                            return None;
+                {
+                    let record_id = logical_record_id + records_before_chunk + record_index as u64;
+                    if !looks_like_active_file(record_bytes) {
+                        if record_id % 100_000 == 0 && !progress_cb(record_id as usize) {
+                            return Err("扫描已取消".into());
                         }
-                        let mut record = record_bytes.to_vec();
-                        if self.apply_fixup(&mut record).is_none() {
-                            return None;
-                        }
-                        let metadata = parse_active_file_record_metadata(&record)?;
-                        if metadata.size > 0 && !metadata.is_cloud_placeholder {
-                            Some((metadata.size, record_id, metadata.modified))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
+                        continue;
+                    }
 
-                for opt in chunk_candidates {
-                    if let Some((size, record_id, modified)) = opt {
-                        heap.push(Reverse((size, record_id, modified)));
-                        if heap.len() > top_limit {
-                            heap.pop();
+                    let mut record = record_bytes.to_vec();
+                    if self.apply_fixup(&mut record).is_some() {
+                        if let Some(metadata) = parse_active_file_record_metadata(&record) {
+                            // 云端占位文件不挤占 Top-N 名额（召回成本极高且不占本地空间）。
+                            if metadata.size > 0 && !metadata.is_cloud_placeholder {
+                                heap.push(Reverse((metadata.size, record_id, metadata.modified)));
+                                if heap.len() > top_limit {
+                                    heap.pop();
+                                }
+                            }
                         }
                     }
-                }
 
-                let chunk_end_id = logical_record_id + records_before_chunk
-                    + (aligned_read_len / self.file_record_size) as u64;
-                if chunk_end_id % 100_000 < self.file_record_size as u64
-                    && !progress_cb(chunk_end_id as usize)
-                {
-                    return Err("扫描已取消".into());
+                    if record_id % 100_000 == 0 && !progress_cb(record_id as usize) {
+                        return Err("扫描已取消".into());
+                    }
                 }
 
                 bytes_read_in_run += aligned_read_len as u64;
@@ -511,38 +500,27 @@ impl NtfsFileMetadataReader {
                     .map_err(|error| format!("顺序读取 $MFT 失败: {}", error))?;
 
                 let records_before_chunk = bytes_read_in_run / self.file_record_size as u64;
-                // rayon 并行解析：只解析 wanted 集合中的记录
-                let chunk_found: Vec<(u64, MftFileMetadata)> = buffer[..aligned_read_len]
-                    .par_chunks_exact(self.file_record_size)
+                for (record_index, record_bytes) in buffer[..aligned_read_len]
+                    .chunks_exact(self.file_record_size)
                     .enumerate()
-                    .filter_map(|(record_index, record_bytes)| {
-                        let record_id = logical_record_id + records_before_chunk + record_index as u64;
-                        if !wanted_mft_ids.contains(&record_id) || !looks_like_active_file(record_bytes) {
-                            return None;
-                        }
-                        let mut record = record_bytes.to_vec();
-                        if self.apply_fixup(&mut record).is_none() {
-                            return None;
-                        }
-                        let metadata = parse_active_file_record_metadata(&record)?;
-                        Some((record_id, metadata))
-                    })
-                    .collect();
-
-                for (id, m) in chunk_found {
-                    metadata_by_id.insert(id, m);
-                }
-
-                let chunk_end_id = logical_record_id + records_before_chunk
-                    + (aligned_read_len / self.file_record_size) as u64;
-                if chunk_end_id % 100_000 < self.file_record_size as u64
-                    && !progress_cb(chunk_end_id as usize)
                 {
-                    return Err("扫描已取消".into());
-                }
+                    let record_id = logical_record_id + records_before_chunk + record_index as u64;
+                    if wanted_mft_ids.contains(&record_id) && looks_like_active_file(record_bytes) {
+                        let mut record = record_bytes.to_vec();
+                        if self.apply_fixup(&mut record).is_some() {
+                            if let Some(metadata) = parse_active_file_record_metadata(&record) {
+                                metadata_by_id.insert(record_id, metadata);
+                            }
+                        }
+                    }
 
-                if metadata_by_id.len() >= wanted_mft_ids.len() {
-                    return Ok(metadata_by_id);
+                    if record_id % 100_000 == 0 && !progress_cb(record_id as usize) {
+                        return Err("扫描已取消".into());
+                    }
+
+                    if metadata_by_id.len() >= wanted_mft_ids.len() {
+                        return Ok(metadata_by_id);
+                    }
                 }
 
                 bytes_read_in_run += aligned_read_len as u64;
