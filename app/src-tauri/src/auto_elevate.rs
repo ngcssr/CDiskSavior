@@ -14,9 +14,12 @@ const TASK_NAME: &str = "CDiskSaviorElevated";
 
 pub fn ensure_elevation() {
     if crate::lightc_mft::is_elevated() {
-        // 已提权：后台确保计划任务存在（schtasks /query 在 Task Scheduler
-        // 服务未就绪时会阻塞十几秒，必须异步，不能卡住 UI 启动）
-        std::thread::spawn(ensure_task_exists);
+        // 已提权：延迟 10s 创建计划任务，彻底避开 WebView2 初始化窗口
+        // （schtasks 进程启动会抢占 CPU/磁盘，导致启动白屏）
+        std::thread::spawn(|| {
+            std::thread::sleep(std::time::Duration::from_secs(10));
+            ensure_task_exists();
+        });
         return;
     }
     if task_matches_current() {
