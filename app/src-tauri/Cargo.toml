@@ -70,10 +70,9 @@ indexmap = { version = "1", features = ["std"] }
 custom-protocol = ["tauri/custom-protocol"]
 
 [profile.release]
-# C 级防逆向加固：满优化 + 全量 LTO + 单代码生成单元（内联最大化、符号布局随机化）
+# 与 light-c 对齐：Rust 默认 release profile（opt3，无 LTO，codegen-units=16）
+# fat LTO + 单 codegen-unit 在 I/O 密集的 $MFT 顺序读场景反优化（实测慢于默认）
 opt-level = 3
-lto = "fat"
-codegen-units = 1
-strip = "symbols"      # 剥离符号表与调试信息（函数名/路径不进二进制）
+strip = "symbols"
 debug = false
-panic = "unwind"       # tauri 运行时依赖 unwind，不可改 abort
+panic = "unwind"

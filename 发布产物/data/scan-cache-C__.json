@@ -1,10 +1,10 @@
 {
-  "scannedAt": 1791700103,
+  "scannedAt": 1791702159,
   "root": "C:\\",
   "tree": {
     "name": "C:\\",
     "path": "C:\\",
-    "size": 113575070076,
+    "size": 115023058162,
     "isDir": true,
     "hasChildren": true,
     "category": "unknown",
@@ -15,7 +15,7 @@
       {
         "name": "Users",
         "path": "C:\\Users",
-        "size": 41540042061,
+        "size": 41502362626,
         "isDir": true,
         "hasChildren": true,
         "category": "unknown",
@@ -26,7 +26,7 @@
           {
             "name": "Administrator",
             "path": "C:\\Users\\Administrator",
-            "size": 40916041205,
+            "size": 40878361770,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -76,7 +76,7 @@
       {
         "name": "Windows",
         "path": "C:\\Windows",
-        "size": 28096458193,
+        "size": 28097867670,
         "isDir": true,
         "hasChildren": true,
         "category": "unknown",
@@ -99,7 +99,7 @@
           {
             "name": "System32",
             "path": "C:\\Windows\\System32",
-            "size": 7121440926,
+            "size": 7122641054,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -291,7 +291,7 @@
           {
             "name": "Logs",
             "path": "C:\\Windows\\Logs",
-            "size": 59312522,
+            "size": 59381781,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -447,7 +447,7 @@
           {
             "name": "Prefetch",
             "path": "C:\\Windows\\Prefetch",
-            "size": 6274928,
+            "size": 6601349,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -637,9 +637,9 @@
             "children": []
           },
           {
-            "name": "SystemTemp",
-            "path": "C:\\Windows\\SystemTemp",
-            "size": 949567,
+            "name": "bcastdvr",
+            "path": "C:\\Windows\\bcastdvr",
+            "size": 785153,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -649,9 +649,9 @@
             "children": []
           },
           {
-            "name": "bcastdvr",
-            "path": "C:\\Windows\\bcastdvr",
-            "size": 785153,
+            "name": "SystemTemp",
+            "path": "C:\\Windows\\SystemTemp",
+            "size": 763236,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -3570,7 +3570,7 @@
       {
         "name": "Program Files (x86)",
         "path": "C:\\Program Files (x86)",
-        "size": 10490465182,
+        "size": 10490495225,
         "isDir": true,
         "hasChildren": true,
         "category": "unknown",
@@ -3629,7 +3629,7 @@
           {
             "name": "Google",
             "path": "C:\\Program Files (x86)\\Google",
-            "size": 715908331,
+            "size": 715938374,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -4891,7 +4891,7 @@
       {
         "name": "ProgramData",
         "path": "C:\\ProgramData",
-        "size": 5143770037,
+        "size": 5144773181,
         "isDir": true,
         "hasChildren": true,
         "category": "unknown",
@@ -4902,7 +4902,7 @@
           {
             "name": "Microsoft",
             "path": "C:\\ProgramData\\Microsoft",
-            "size": 2280319834,
+            "size": 2281269730,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -5022,7 +5022,7 @@
           {
             "name": "USOShared",
             "path": "C:\\ProgramData\\USOShared",
-            "size": 23777280,
+            "size": 23830528,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -5708,6 +5708,43 @@
             "name": "SDK",
             "path": "C:\\BuildTools\\SDK",
             "size": 4556,
+            "isDir": true,
+            "hasChildren": false,
+            "category": "unknown",
+            "friendlyName": null,
+            "description": null,
+            "safety": "unknown",
+            "children": []
+          }
+        ]
+      },
+      {
+        "name": "$RECYCLE.BIN",
+        "path": "C:\\$RECYCLE.BIN",
+        "size": 1483234091,
+        "isDir": true,
+        "hasChildren": true,
+        "category": "unknown",
+        "friendlyName": null,
+        "description": null,
+        "safety": "unknown",
+        "children": [
+          {
+            "name": "S-1-5-21-876982227-1758349715-3841343856-500",
+            "path": "C:\\$RECYCLE.BIN\\S-1-5-21-876982227-1758349715-3841343856-500",
+            "size": 1483233962,
+            "isDir": true,
+            "hasChildren": false,
+            "category": "unknown",
+            "friendlyName": null,
+            "description": null,
+            "safety": "unknown",
+            "children": []
+          },
+          {
+            "name": "S-1-5-18",
+            "path": "C:\\$RECYCLE.BIN\\S-1-5-18",
+            "size": 129,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -6796,43 +6833,6 @@
             "name": "Logs",
             "path": "C:\\Library\\Logs",
             "size": 8861497,
-            "isDir": true,
-            "hasChildren": false,
-            "category": "unknown",
-            "friendlyName": null,
-            "description": null,
-            "safety": "unknown",
-            "children": []
-          }
-        ]
-      },
-      {
-        "name": "$RECYCLE.BIN",
-        "path": "C:\\$RECYCLE.BIN",
-        "size": 9234,
-        "isDir": true,
-        "hasChildren": true,
-        "category": "unknown",
-        "friendlyName": null,
-        "description": null,
-        "safety": "unknown",
-        "children": [
-          {
-            "name": "S-1-5-21-876982227-1758349715-3841343856-500",
-            "path": "C:\\$RECYCLE.BIN\\S-1-5-21-876982227-1758349715-3841343856-500",
-            "size": 9105,
-            "isDir": true,
-            "hasChildren": false,
-            "category": "unknown",
-            "friendlyName": null,
-            "description": null,
-            "safety": "unknown",
-            "children": []
-          },
-          {
-            "name": "S-1-5-18",
-            "path": "C:\\$RECYCLE.BIN\\S-1-5-18",
-            "size": 129,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
