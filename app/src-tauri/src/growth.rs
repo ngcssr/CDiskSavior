@@ -41,9 +41,10 @@ pub fn get_mft_stats(drive: char) -> Result<crate::lightc_mft::FullDriveStats, S
         cache_mft_stats(drive, stats.clone());
         return Ok(stats);
     }
-    // ③ 服务管道（SYSTEM 权限代做 MFT 读取）——非提权 GUI 的首选路径
-    //    在任意 UAC 配置的机器上：安装版注册了服务，GUI 不需要提权
-    if crate::svc_client::service_installed() {
+    // ③ 服务管道（SYSTEM 权限代做 MFT）——仅【未提权】时走。
+    //    提权时进程内单遍更快（省去服务进程启动 + 管道往返开销），且避免
+    //    旧版侧车不识别 scan_stats 命令导致的无谓重试。
+    if !crate::lightc_mft::is_elevated() && crate::svc_client::service_installed() {
         if let Ok(stats) = crate::svc_client::scan_stats_via_service(&root_norm) {
             cache_mft_stats(drive, stats.clone());
             return Ok(stats);
@@ -288,7 +289,6 @@ pub fn scan_hotspot(custom_root: Option<&str>) -> HotspotReport {
 
 /// light-c MFT 引擎热点快路径：全盘目录聚合 → 取各根的一级子目录
 fn scan_hotspot_mft(roots: &[PathBuf], t0: &std::time::Instant) -> Option<HotspotReport> {
-    use std::sync::atomic::Ordering;
     // 全部根须同盘
     let drive = roots.first()?.to_string_lossy().chars().next()?;
     if !drive.is_ascii_alphabetic()

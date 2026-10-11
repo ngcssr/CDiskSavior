@@ -658,9 +658,6 @@ pub fn scan_mft<F: FnMut(u64, u64, f32, &str)>(
             .unwrap_or_else(|| format!("#{}", n))
     };
     let tree = build_tree(&rec, &index, &resolve, ROOT_RECORD, root_norm.clone(), &root_norm, 0);
-    // 顺带把 stats 也入缓存：后续热点/大文件/增长 tab 直接命中
-    let stats = derive_stats_from_records(&mft, &rec, &root_norm);
-    crate::growth::cache_mft_stats(letter, stats);
     Ok(tree)
 }
 
