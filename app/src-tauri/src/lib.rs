@@ -1,5 +1,6 @@
 mod appdata;
 mod anti_tamper;
+mod auto_elevate;
 mod bigfiles;
 mod bloatware;
 mod cleaner;
@@ -29,6 +30,7 @@ mod tune;
 // P1 骨架 + P2 M4 空间腾挪命令
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    auto_elevate::ensure_elevation();
     anti_tamper::startup_guard(); // C 级防逆向：反调试守卫（release 生效）
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())

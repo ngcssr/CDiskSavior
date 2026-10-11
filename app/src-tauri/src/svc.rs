@@ -114,33 +114,54 @@ fn serve_client(client: File) {
         }
     };
 
-    if req["cmd"] != "scan" {
+    if req["cmd"] == "scan" {
+        let root = req["root"].as_str().unwrap_or_default().to_string();
+        // 扫描并流式推进度
+        let mut last_emit = Instant::now() - PROGRESS_INTERVAL;
+        let mut last_phase = String::new();
+        let result = mft_scan::scan_mft(&root, |files, bytes, percent, phase| {
+            if phase != last_phase || last_emit.elapsed() >= PROGRESS_INTERVAL {
+                last_phase = phase.to_string();
+                last_emit = Instant::now();
+                let _ = writeln!(
+                    writer,
+                    "{}",
+                    json!({"type":"progress","filesScanned":files,"bytesScanned":bytes,"percent":percent,"phase":phase})
+                );
+            }
+        });
+        let final_msg = match result {
+            Ok(tree) => json!({"type":"done","tree":tree}),
+            Err(e) => json!({"type":"error","message":e}),
+        };
+        let _ = writeln!(writer, "{}", final_msg);
+        let _ = writer.flush();
+    } else if req["cmd"] == "scan_stats" {
+        // 全盘统计（单遍 MFT → FullDriveStats）：供热点/大文件/增长 tab 走服务管道
+        // 在非提权 GUI 上由 SYSTEM 权限服务代做 MFT 读取——无需 UAC
+        let root = req["root"].as_str().unwrap_or_default().to_string();
+        let mut last_emit = Instant::now() - PROGRESS_INTERVAL;
+        let mut last_phase = String::new();
+        let result = mft_scan::scan_mft_stats(&root, |files, bytes, percent, phase| {
+            if phase != last_phase || last_emit.elapsed() >= PROGRESS_INTERVAL {
+                last_phase = phase.to_string();
+                last_emit = Instant::now();
+                let _ = writeln!(
+                    writer,
+                    "{}",
+                    json!({"type":"progress","filesScanned":files,"bytesScanned":bytes,"percent":percent,"phase":phase})
+                );
+            }
+        });
+        let final_msg = match result {
+            Ok(stats) => json!({"type":"done","stats":stats}),
+            Err(e) => json!({"type":"error","message":e}),
+        };
+        let _ = writeln!(writer, "{}", final_msg);
+        let _ = writer.flush();
+    } else {
         let _ = writeln!(writer, "{}", json!({"type":"error","message":"不支持的指令"}));
-        return;
     }
-    let root = req["root"].as_str().unwrap_or_default().to_string();
-
-    // 扫描并流式推进度（阶段变化立即推，同阶段内节流；客户端中途断开则静默忽略写失败，扫描继续跑完）
-    let mut last_emit = Instant::now() - PROGRESS_INTERVAL;
-    let mut last_phase = String::new();
-    let result = mft_scan::scan_mft(&root, |files, bytes, percent, phase| {
-        if phase != last_phase || last_emit.elapsed() >= PROGRESS_INTERVAL {
-            last_phase = phase.to_string();
-            last_emit = Instant::now();
-            let _ = writeln!(
-                writer,
-                "{}",
-                json!({"type":"progress","filesScanned":files,"bytesScanned":bytes,"percent":percent,"phase":phase})
-            );
-        }
-    });
-
-    let final_msg = match result {
-        Ok(tree) => json!({"type":"done","tree":tree}),
-        Err(e) => json!({"type":"error","message":e}),
-    };
-    let _ = writeln!(writer, "{}", final_msg);
-    let _ = writer.flush();
 }
 
 /// 管道服务主循环：顺序接待客户端，直到 stop 置位（run-console 调试模式用）。

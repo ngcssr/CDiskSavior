@@ -134,3 +134,36 @@ pub fn scan_via_service<F: FnMut(u64, u64, f32, &str)>(
     }
     Err("服务连接中断".to_string())
 }
+
+/// 通过服务获取全盘统计（FullDriveStats）。
+/// 服务以 SYSTEM 权限运行 scan_mft_stats——非提权 GUI 也能获得 MFT 秒级扫描。
+pub fn scan_stats_via_service(
+    root: &str,
+) -> Result<crate::lightc_mft::FullDriveStats, String> {
+    let mut pipe = open_pipe_on_demand()?;
+    writeln!(pipe, "{}", json!({"cmd": "scan_stats", "root": root}))
+        .map_err(|e| format!("发送请求失败：{}", e))?;
+    pipe.flush().ok();
+
+    let reader = BufReader::new(pipe);
+    for line in reader.lines() {
+        let line = line.map_err(|e| format!("读取服务响应失败：{}", e))?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let msg: serde_json::Value =
+            serde_json::from_str(&line).map_err(|e| format!("服务响应格式错误：{}", e))?;
+        match msg["type"].as_str() {
+            Some("progress") => {} // 服务端推送进度，stats 路径忽略
+            Some("done") => {
+                return serde_json::from_value(msg["stats"].clone())
+                    .map_err(|e| format!("解析统计结果失败：{}", e));
+            }
+            Some("error") => {
+                return Err(msg["message"].as_str().unwrap_or("服务扫描失败").to_string());
+            }
+            _ => {}
+        }
+    }
+    Err("服务连接中断".to_string())
+}

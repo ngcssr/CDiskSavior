@@ -41,7 +41,15 @@ pub fn get_mft_stats(drive: char) -> Result<crate::lightc_mft::FullDriveStats, S
         cache_mft_stats(drive, stats.clone());
         return Ok(stats);
     }
-    // ③ 慢路径：拿扫描锁（序列化并发 $MFT 读，防 I/O 争抢）
+    // ③ 服务管道（SYSTEM 权限代做 MFT 读取）——非提权 GUI 的首选路径
+    //    在任意 UAC 配置的机器上：安装版注册了服务，GUI 不需要提权
+    if crate::svc_client::service_installed() {
+        if let Ok(stats) = crate::svc_client::scan_stats_via_service(&root_norm) {
+            cache_mft_stats(drive, stats.clone());
+            return Ok(stats);
+        }
+    }
+    // ④ 慢路径：拿扫描锁，进程内加载（需提权；便携版 UAC 开启机器走这里或回退 jwalk）
     let _scan_guard = MFT_SCAN_LOCK.lock().map_err(|_| "扫描锁中毒")?;
     // 双检 stats
     if let Ok(guard) = MFT_DATA_CACHE.lock() {
