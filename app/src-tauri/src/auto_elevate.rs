@@ -14,7 +14,9 @@ const TASK_NAME: &str = "CDiskSaviorElevated";
 
 pub fn ensure_elevation() {
     if crate::lightc_mft::is_elevated() {
-        ensure_task_exists();
+        // 已提权：后台确保计划任务存在（schtasks /query 在 Task Scheduler
+        // 服务未就绪时会阻塞十几秒，必须异步，不能卡住 UI 启动）
+        std::thread::spawn(ensure_task_exists);
         return;
     }
     if task_matches_current() {
