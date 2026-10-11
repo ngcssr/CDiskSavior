@@ -17,14 +17,14 @@ pub fn ensure_elevation() {
         ensure_task_exists();
         return;
     }
-    if task_exists() {
+    if task_matches_current() {
         let _ = Command::new("schtasks")
             .args(["/run", "/tn", TASK_NAME])
             .creation_flags(0x08000000) // CREATE_NO_WINDOW
             .spawn();
         std::process::exit(0);
     }
-    // 首次：弹一次 UAC
+    // 首次或 exe 已移动：弹一次 UAC 重建任务并启动
     let exe = std::env::current_exe().unwrap_or_default();
     let exe_str = exe.to_string_lossy().to_string();
     unsafe { shell_execute_runas(&exe_str); }
@@ -32,29 +32,40 @@ pub fn ensure_elevation() {
 }
 
 fn ensure_task_exists() {
-    if task_exists() {
+    if task_matches_current() {
         return;
     }
     let exe = std::env::current_exe().unwrap_or_default();
     let exe_str = exe.to_string_lossy().to_string();
+    // 手动触发型任务：/sc once + 过去日期 → 永不自动运行，只能 schtasks /run 显式拉起。
+    // （切勿用 onlogon——那会导致每次登录自动弹提权实例，非预期。）
     let _ = Command::new("schtasks")
         .args([
             "/create", "/tn", TASK_NAME,
             "/tr", &format!("\"{}\"", exe_str),
-            "/sc", "onlogon", "/rl", "highest", "/f",
+            "/sc", "once", "/st", "00:00", "/sd", "01/01/2000",
+            "/rl", "highest", "/f",
         ])
         .creation_flags(0x08000000)
         .spawn()
         .and_then(|mut c| c.wait());
 }
 
-fn task_exists() -> bool {
-    Command::new("schtasks")
-        .args(["/query", "/tn", TASK_NAME])
+fn task_matches_current() -> bool {
+    // 不仅要存在，还要指向当前 exe（便携版可能被移动到新路径）
+    let exe = std::env::current_exe().unwrap_or_default();
+    let exe_str = exe.to_string_lossy().to_string();
+    let out = Command::new("schtasks")
+        .args(["/query", "/tn", TASK_NAME, "/fo", "list", "/v"])
         .creation_flags(0x08000000)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+        .output();
+    match out {
+        Ok(o) if o.status.success() => {
+            let text = String::from_utf8_lossy(&o.stdout);
+            text.contains(&exe_str)
+        }
+        _ => false,
+    }
 }
 
 unsafe fn shell_execute_runas(exe_path: &str) {
