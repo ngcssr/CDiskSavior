@@ -29,9 +29,14 @@ function TreeMapView({ tree, onDrill }: { tree: TreeNode; onDrill: (n: TreeNode)
   const W = 1000;
   const H = 420;
   const leaves = useMemo(() => {
-    const children = (tree.children ?? []).filter((c) => c.size > 0);
-    if (children.length === 0) return [];
-    const root = hierarchy({ name: tree.name, size: 0, children } as any)
+    // 只渲染当前目录的一级子项（面积=大小），点击下钻后以新节点的子项重排。
+    // 不可把整棵树喂给 d3 展开——服务树含 65 万文件级叶子，
+    // 叶子级渲染会产生海量亚像素方块（碎点+空白）且卡死 UI 线程。
+    const blocks = (tree.children ?? [])
+      .filter((c) => c.size > 0)
+      .map((c) => ({ ...c, children: undefined }));
+    if (blocks.length === 0) return [];
+    const root = hierarchy({ name: tree.name, size: 0, children: blocks } as any)
       .sum((d: any) => d.size)
       .sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
     const layout = treemap<any>()
@@ -59,7 +64,12 @@ function TreeMapView({ tree, onDrill }: { tree: TreeNode; onDrill: (n: TreeNode)
         return (
           <g
             key={d.path}
-            onClick={() => d.isDir && onDrill(d as TreeNode)}
+            onClick={() => {
+              if (!d.isDir) return;
+              // 副本被剥了 children，下钻必须回查原始节点
+              const original = (tree.children ?? []).find((c) => c.path === d.path);
+              if (original) onDrill(original as TreeNode);
+            }}
             className={d.isDir ? "cursor-pointer" : ""}
           >
             <title>{`${d.path}\n${formatSize(leaf.value ?? 0)}（${(ratio * 100).toFixed(1)}%）`}</title>
