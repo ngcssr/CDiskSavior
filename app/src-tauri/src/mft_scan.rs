@@ -651,11 +651,19 @@ pub fn scan_mft<F: FnMut(u64, u64, f32, &str)>(
     let index = aggregate(&rec);
 
     // 名字仅为最终保留的少量节点解析（get_best_file_name 兼容属性列表等边界）
+    // 加缓存：每个记录号只解析一次（build_tree 递归 28K 节点，避免重复慢调用）
+    let name_cache = std::cell::RefCell::new(std::collections::HashMap::<u64, String>::new());
     let resolve = |n: u64| -> String {
-        mft.get_record(n)
+        if let Some(s) = name_cache.borrow().get(&n) {
+            return s.clone();
+        }
+        let s = mft
+            .get_record(n)
             .and_then(|f| f.get_best_file_name(&mft))
             .map(|nm| nm.to_string())
-            .unwrap_or_else(|| format!("#{}", n))
+            .unwrap_or_else(|| format!("#{}", n));
+        name_cache.borrow_mut().insert(n, s.clone());
+        s
     };
     let tree = build_tree(&rec, &index, &resolve, ROOT_RECORD, root_norm.clone(), &root_norm, 0);
     Ok(tree)

@@ -28,10 +28,34 @@ pub mod svc_client;
 mod tune;
 
 // P1 骨架 + P2 M4 空间腾挪命令
+
+/// 启动计时诊断（定位白屏阶段；写入临时文件，稳定后可移除）
+static STARTUP_T0: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+fn startup_log(msg: &str) {
+    #[cfg(all(windows, not(debug_assertions)))]
+    {
+        use std::io::Write;
+        let t0 = STARTUP_T0.get_or_init(std::time::Instant::now);
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(std::env::temp_dir().join("cdisk_startup.log"))
+        {
+            let _ = writeln!(f, "[{:>6}ms] {}", t0.elapsed().as_millis(), msg);
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    STARTUP_T0.get_or_init(std::time::Instant::now);
+    startup_log("run enter");
+
     auto_elevate::ensure_elevation();
+    startup_log("after auto_elevate");
+
     anti_tamper::startup_guard(); // C 级防逆向：反调试守卫（release 生效）
+    startup_log("after anti_tamper");
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -182,6 +206,7 @@ pub fn run() {
             slim_commands::delete_ai_model
         ])
         .setup(|_app| {
+            startup_log("setup enter (WebView created)");
             // R8: 单实例互斥（修复：句柄必须持有到进程退出，第二个实例直接 exit）
             match state::SingleInstance::new() {
                 Ok(handle) => {
