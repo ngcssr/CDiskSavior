@@ -42,6 +42,76 @@ pub fn scan_large_files(root: &str, min_size: u64) -> LargeFileReport {
 
 /// 带进度回调的大文件扫描（每 2000 个文件回调一次已扫描数）
 pub fn scan_large_files_with_progress(root: &str, min_size: u64, on_progress: &dyn Fn(usize)) -> LargeFileReport {
+    // MFT 快路径（light-c 引擎）：目标是盘符根 + NTFS + 已提权时秒级完成；
+    // 任意失败/取消/非适用条件回退 jwalk 遍历路径（行为与原路径完全一致）。
+    if let Some(drive) = drive_root_letter(root) {
+        if crate::lightc_mft::mft_available(drive) {
+            match scan_large_files_mft(drive, min_size, on_progress) {
+                Ok(report) => return report,
+                Err(_) => { /* 回退遍历 */ }
+            }
+        }
+    }
+    scan_large_files_jwalk(root, min_size, on_progress)
+}
+
+/// 提取盘符根（"C:\\" / "C:" / "c:\\xxx" 中的盘符；仅当 root 恰为盘符根时返回 Some）
+fn drive_root_letter(root: &str) -> Option<char> {
+    let t = root.trim_end_matches(['\\', '/']);
+    if t.len() == 2 && t.as_bytes()[1] == b':' {
+        let c = t.chars().next()?;
+        if c.is_ascii_alphabetic() {
+            return Some(c.to_ascii_uppercase());
+        }
+    }
+    None
+}
+
+/// light-c MFT 引擎大文件快路径：USN 枚举 + $MFT 顺序读 + Top-200
+fn scan_large_files_mft(drive: char, min_size: u64, on_progress: &dyn Fn(usize)) -> Result<LargeFileReport, String> {
+    CANCELLED.store(false, Ordering::Relaxed);
+    let t0 = std::time::Instant::now();
+    let cancelled_check = |_stage: &str, processed: usize| {
+        if CANCELLED.load(Ordering::Relaxed) {
+            return false;
+        }
+        on_progress(processed);
+        true
+    };
+
+    // 阈值过滤在 MFT Top-N 之后做（Top-N 取 200 上限，通常远大于阈值筛选结果）
+    let mut files = crate::lightc_mft::scan_top_files(drive, MAX_RESULTS, &cancelled_check)
+        .map_err(|e| e)?;
+    files.retain(|(_, size, _)| *size >= min_size);
+
+    let entries: Vec<LargeFileEntry> = files
+        .into_iter()
+        .map(|(path, size, modified)| {
+            let name = std::path::Path::new(&path)
+                .file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let dir = std::path::Path::new(&path)
+                .parent()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default();
+            LargeFileEntry { path, name, size, modified, dir }
+        })
+        .collect();
+    let total_found = entries.len();
+
+    Ok(LargeFileReport {
+        entries,
+        total_found,
+        scanned_files: 0, // MFT 路径不逐一统计（全盘记录数无意义暴露）
+        duration_ms: t0.elapsed().as_millis() as u64,
+        cancelled: false,
+        truncated: false,
+    })
+}
+
+/// jwalk 遍历路径（原实现）
+fn scan_large_files_jwalk(root: &str, min_size: u64, on_progress: &dyn Fn(usize)) -> LargeFileReport {
     CANCELLED.store(false, Ordering::Relaxed);
     let t0 = std::time::Instant::now();
     let root_path = Path::new(root);

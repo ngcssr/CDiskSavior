@@ -8,6 +8,7 @@ mod growth;
 mod health;
 mod commands;
 mod icon;
+mod lightc_mft;
 pub mod knowledge;
 pub mod mft_scan;
 mod registry_clean;

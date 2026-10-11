@@ -113,6 +113,11 @@ pub fn scan_hotspot(custom_root: Option<&str>) -> HotspotReport {
         }
     };
 
+    // MFT 快路径（light-c 引擎）：全部根同盘 + NTFS + 提权时全盘秒级聚合
+    if let Some(report) = scan_hotspot_mft(&roots, &t0) {
+        return report;
+    }
+
     let mut entries: Vec<HotspotEntry> = Vec::new();
     let mut scanned = 0usize;
     for root in roots {
@@ -137,6 +142,90 @@ pub fn scan_hotspot(custom_root: Option<&str>) -> HotspotReport {
     entries.sort_by(|a, b| b.total_size.cmp(&a.total_size));
     entries.truncate(30);
     HotspotReport { entries, scanned_folders: scanned, duration_ms: t0.elapsed().as_millis() as u64 }
+}
+
+/// light-c MFT 引擎热点快路径：全盘目录聚合 → 取各根的一级子目录
+fn scan_hotspot_mft(roots: &[PathBuf], t0: &std::time::Instant) -> Option<HotspotReport> {
+    use std::sync::atomic::Ordering;
+    // 全部根须同盘
+    let drive = roots.first()?.to_string_lossy().chars().next()?;
+    if !drive.is_ascii_alphabetic()
+        || !roots.iter().all(|r| {
+            r.to_string_lossy()
+                .chars()
+                .next()
+                .map(|c| c.eq_ignore_ascii_case(&drive))
+                .unwrap_or(false)
+        })
+    {
+        return None;
+    }
+    if !crate::lightc_mft::mft_available(drive) {
+        return None;
+    }
+    let stats = crate::lightc_mft::full_drive_stats(drive, &|_, _| {
+        !HOTSPOT_CANCELLED.load(Ordering::Relaxed)
+    })
+    .ok()?;
+
+    let mut entries: Vec<HotspotEntry> = Vec::new();
+    let mut scanned = 0usize;
+    for root in roots {
+        for (path, (size, count, latest_ms)) in &stats.dir_stats {
+            // 根的一级子目录
+            let Ok(rel) = path.strip_prefix(root) else { continue };
+            if rel.components().count() != 1 {
+                continue;
+            }
+            scanned += 1;
+            if *size <= 10 * 1024 * 1024 {
+                continue;
+            }
+            let name = rel.to_string_lossy().to_string();
+            // 智能下钻（与 make_entry 同规则：>5GB 且 >1000 文件展示前 3 大子目录）
+            let mut children = Vec::new();
+            if *size > 5 * 1024 * 1024 * 1024 && *count > 1000 {
+                let mut subs: Vec<HotspotEntry> = stats
+                    .dir_stats
+                    .iter()
+                    .filter(|(p2, _)| {
+                        p2.strip_prefix(path)
+                            .map(|r2| r2.components().count() == 1)
+                            .unwrap_or(false)
+                    })
+                    .map(|(p2, (s2, c2, m2))| HotspotEntry {
+                        path: p2.to_string_lossy().to_string(),
+                        name: p2.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default(),
+                        total_size: *s2,
+                        file_count: *c2,
+                        last_modified: *m2,
+                        is_cache: is_cache_dir(&p2.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default()),
+                        children: Vec::new(),
+                    })
+                    .collect();
+                subs.sort_by(|a, b| b.total_size.cmp(&a.total_size));
+                subs.truncate(3);
+                children = subs;
+            }
+            entries.push(HotspotEntry {
+                path: path.to_string_lossy().to_string(),
+                name: name.clone(),
+                total_size: *size,
+                file_count: *count,
+                last_modified: *latest_ms,
+                is_cache: is_cache_dir(&name),
+                children,
+            });
+        }
+    }
+
+    entries.sort_by(|a, b| b.total_size.cmp(&a.total_size));
+    entries.truncate(30);
+    Some(HotspotReport {
+        entries,
+        scanned_folders: scanned,
+        duration_ms: t0.elapsed().as_millis() as u64,
+    })
 }
 
 // ---------- 磁盘增长（快照对比） ----------
@@ -181,6 +270,41 @@ fn snapshot_file(drive: &str) -> Option<PathBuf> {
 
 /// 扫描盘符根 + 一级子目录的大小（快照数据点）
 fn scan_drive_levels(root: &str) -> Vec<(String, u64)> {
+    // MFT 快路径（light-c 引擎）：NTFS + 提权时全盘秒级聚合，取一级子目录
+    if let Some(levels) = scan_drive_levels_mft(root) {
+        return levels;
+    }
+    scan_drive_levels_jwalk(root)
+}
+
+/// light-c MFT 引擎：全盘目录聚合 → 过滤一级子目录
+fn scan_drive_levels_mft(root: &str) -> Option<Vec<(String, u64)>> {
+    let letter = root.chars().next().filter(|c| c.is_ascii_alphabetic())?;
+    if !crate::lightc_mft::mft_available(letter) {
+        return None;
+    }
+    let stats = crate::lightc_mft::full_drive_stats(letter, &|_, _| {
+        !GROWTH_CANCELLED.load(std::sync::atomic::Ordering::Relaxed)
+    })
+    .ok()?;
+
+    let root_path = PathBuf::from(root);
+    let mut out: Vec<(String, u64)> = stats
+        .dir_stats
+        .iter()
+        .filter(|(path, _)| {
+            path.strip_prefix(&root_path)
+                .map(|rel| rel.components().count() == 1)
+                .unwrap_or(false)
+        })
+        .map(|(path, (size, _, _))| (path.to_string_lossy().to_string(), *size))
+        .collect();
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    if out.is_empty() { None } else { Some(out) }
+}
+
+/// jwalk 遍历路径（原实现）
+fn scan_drive_levels_jwalk(root: &str) -> Vec<(String, u64)> {
     let mut out = Vec::new();
     let root_path = Path::new(root);
     if let Ok(read) = std::fs::read_dir(root_path) {
@@ -404,6 +528,39 @@ pub fn get_file_change_details(path: &str, offset: usize, limit: usize, drive: &
         .and_then(|f| crate::state::read_json_self_heal::<Snapshot>(&f).ok().flatten())
         .map(|(s, _)| s.created_at as i64)
         .unwrap_or(0);
+
+    // MFT 快路径（light-c 引擎）：目标在 NTFS 盘 + 提权时全盘秒级枚举，按 mtime 过滤
+    if let Some(letter) = root.to_string_lossy().chars().next().filter(|c| c.is_ascii_alphabetic()) {
+        if crate::lightc_mft::mft_available(letter) {
+            if let Ok(stats) = crate::lightc_mft::full_drive_stats(letter, &|_, _| {
+                !GROWTH_CANCELLED.load(Ordering::Relaxed)
+            }) {
+                let root_str = root.to_string_lossy().to_string();
+                let mut entries: Vec<FileDetailEntry> = stats
+                    .files
+                    .into_iter()
+                    .filter(|(p, _, mtime)| {
+                        p.starts_with(&root_str) && (baseline_at <= 0 || *mtime >= baseline_at)
+                    })
+                    .map(|(p, size, mtime)| FileDetailEntry {
+                        name: std::path::Path::new(&p)
+                            .file_name()
+                            .map(|f| f.to_string_lossy().to_string())
+                            .unwrap_or_default(),
+                        path: p,
+                        size,
+                        modified: mtime,
+                        is_new: true,
+                    })
+                    .collect();
+                entries.sort_by(|a, b| b.size.cmp(&a.size));
+                let total = entries.len();
+                let limit = limit.clamp(1, 2000);
+                let page: Vec<FileDetailEntry> = entries.into_iter().skip(offset).take(limit).collect();
+                return Ok(FileDetailsResponse { entries: page, total_count: total, offset, limit });
+            }
+        }
+    }
 
     let mut entries = Vec::new();
     for entry in jwalk::WalkDir::new(&root).follow_links(false).into_iter().flatten() {
