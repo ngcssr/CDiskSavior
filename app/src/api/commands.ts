@@ -27,7 +27,8 @@ export const api_dashboard = {
 
 // ============ M2 磁盘透视（14） ============
 export const api_insight = {
-  scan_drive: (root: string) => invoke<TreeNode>("scan_drive", { root }),
+  scan_drive: (root: string, forceRescan?: boolean) =>
+    invoke<TreeNode>("scan_drive", { root, forceRescan: forceRescan ?? null }),
   scan_dir: (path: string) => invoke<TreeNode>("scan_dir", { path }),
   load_scan_cache: (root: string) => invoke<ScanCache | null>("load_scan_cache", { root }),
   scan_disk_growth: (drive: string, maxEntries?: number) => invoke<DiskGrowthScanResponse>("scan_disk_growth", { drive, max_change_entries: maxEntries }),

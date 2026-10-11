@@ -6,7 +6,7 @@ import { hierarchy, treemap, treemapSquarify } from "d3-hierarchy";
 
 type TreeNode = {
   name: string; path: string; size: number; isDir: boolean; hasChildren: boolean;
-  category: string; safety: string; children?: TreeNode[];
+  category: string; friendlyName?: string; description?: string; safety: string; children?: TreeNode[];
 };
 
 function formatSize(bytes: number): string {
@@ -25,7 +25,17 @@ function sizeColor(ratio: number): string {
 }
 
 /** d3-hierarchy 真 TreeMap（面积 = 大小，点击下钻） */
-function TreeMapView({ tree, onDrill }: { tree: TreeNode; onDrill: (n: TreeNode) => void }) {
+function TreeMapView({
+  tree,
+  onDrill,
+  selected,
+  onSelect,
+}: {
+  tree: TreeNode;
+  onDrill: (n: TreeNode) => void;
+  selected: TreeNode | null;
+  onSelect: (n: TreeNode) => void;
+}) {
   const W = 1000;
   const H = 420;
   const leaves = useMemo(() => {
@@ -65,8 +75,11 @@ function TreeMapView({ tree, onDrill }: { tree: TreeNode; onDrill: (n: TreeNode)
           <g
             key={d.path}
             onClick={() => {
+              // 单击选中（详情面板），双击下钻
+              onSelect(d as TreeNode);
+            }}
+            onDoubleClick={() => {
               if (!d.isDir) return;
-              // 副本被剥了 children，下钻必须回查原始节点
               const original = (tree.children ?? []).find((c) => c.path === d.path);
               if (original) onDrill(original as TreeNode);
             }}
@@ -81,8 +94,8 @@ function TreeMapView({ tree, onDrill }: { tree: TreeNode; onDrill: (n: TreeNode)
               rx={4}
               fill={sizeColor(ratio)}
               fillOpacity={d.isDir ? 0.85 : 0.45}
-              stroke="var(--color-surface)"
-              strokeWidth={1.5}
+              stroke={selected?.path === d.path ? "var(--color-primary)" : "var(--color-surface)"}
+              strokeWidth={selected?.path === d.path ? 3 : 1.5}
               className="transition-all hover:fillOpacity-100 hover:brightness-110"
             />
             {showText && (
@@ -115,8 +128,50 @@ function TreeMapView({ tree, onDrill }: { tree: TreeNode; onDrill: (n: TreeNode)
   );
 }
 
+/** 右侧详情面板（WizTree 式）：选中节点是什么/能不能删/占比/打开文件夹 */
+const SAFETY_META: Record<string, { label: string; cls: string; advice: string }> = {
+  keep: { label: "系统文件", cls: "bg-[var(--color-text-secondary)]/10 text-[var(--color-text-secondary)]", advice: "系统或程序运行必需，请勿删除。" },
+  safe: { label: "可清理", cls: "bg-[var(--color-safe)]/10 text-[var(--color-safe)]", advice: "缓存或可再生数据，删除安全。" },
+  caution: { label: "谨慎处理", cls: "bg-[var(--color-warning, #d97706)]/10 text-[var(--color-warning, #d97706)]", advice: "删除前请确认内容，可能含个人数据。" },
+  dangerous: { label: "高危", cls: "bg-[var(--color-danger)]/10 text-[var(--color-danger-text)]", advice: "删除可能导致程序或系统异常。" },
+};
+
+function DetailPanel({ node, parentTotal }: { node: TreeNode; parentTotal: number }) {
+  const meta = SAFETY_META[node.safety] ?? SAFETY_META.keep;
+  const pct = parentTotal > 0 ? ((node.size / parentTotal) * 100).toFixed(1) : "0.0";
+  return (
+    <div className="w-72 shrink-0 rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] p-4">
+      <div className="mb-1 truncate text-sm font-semibold" title={node.friendlyName ?? node.name}>
+        {node.friendlyName ?? node.name}
+      </div>
+      <div className="mb-3 text-xs text-[var(--color-text-secondary)]">
+        {node.isDir ? "目录" : "文件"}
+      </div>
+      <span className={`mb-3 inline-block rounded-full px-3 py-1 text-xs font-medium ${meta.cls}`}>
+        {meta.label}
+      </span>
+      <div className="mb-1 text-2xl font-semibold tabular-nums">{formatSize(node.size)}</div>
+      <div className="mb-3 text-xs text-[var(--color-text-secondary)]">占当前层的 {pct}%</div>
+      <p className="mb-4 text-xs leading-relaxed text-[var(--color-text-secondary)]">
+        {node.description || meta.advice}
+      </p>
+      <div className="mb-3 text-xs text-[var(--color-text-secondary)]">完整路径</div>
+      <div className="mb-3 break-all rounded-lg bg-[var(--color-surface-hover)] p-2 font-mono text-[11px]">
+        {node.path}
+      </div>
+      <button
+        onClick={() => api_settings.reveal_in_folder(node.path).catch(() => {})}
+        className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-[var(--color-line)] px-3 py-2 text-xs font-medium hover:bg-[var(--color-surface-hover)]"
+      >
+        <FolderOpen size={13} /> 在文件夹中打开
+      </button>
+    </div>
+  );
+}
+
 export default function Insight() {
   const [tree, setTree] = useState<TreeNode | null>(null);
+  const [selected, setSelected] = useState<TreeNode | null>(null);
   const [stack, setStack] = useState<TreeNode[]>([]); // 面包屑路径
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -150,12 +205,13 @@ export default function Insight() {
     };
   }, []);
 
-  const scan = useCallback(async (path: string, pushToStack: boolean) => {
+  const scan = useCallback(async (path: string, pushToStack: boolean, force = false) => {
     setLoading(true);
     setError(null);
     try {
-      const result = await api_insight.scan_drive(path);
+      const result = await api_insight.scan_drive(path, force);
       setTree(result);
+      setSelected(null);
       if (pushToStack) {
         setStack((s) => [...s, { ...result, name: path }]);
       } else {
@@ -250,7 +306,7 @@ export default function Insight() {
       {/* 工具栏 */}
       <div className="flex items-center gap-2 border-b border-[var(--color-line)] px-4 py-3">
         <button
-          onClick={() => scan(stack[stack.length - 1]?.path ?? "C:\\", false)}
+          onClick={() => scan(stack[stack.length - 1]?.path ?? "C:\\", false, true)}
           disabled={loading}
           className="flex items-center gap-1.5 rounded-lg bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
         >
@@ -302,19 +358,20 @@ export default function Insight() {
         {error && <div className="mb-4 rounded-xl border border-[var(--color-danger)]/30 bg-[var(--color-danger-bg-soft)] px-4 py-3 text-sm text-[var(--color-danger-text)]">{error}</div>}
 
         {tab === "tree" && tree && !loading && (
-          <>
-            {/* d3-hierarchy 真 TreeMap（面积=大小，点击下钻） */}
-            <div className="mb-6">
-              <h3 className="mb-2 text-xs font-semibold text-[var(--color-text-secondary)]">
-                空间分布 TreeMap（面积 = 大小，点击目录下钻）
-              </h3>
-              <TreeMapView tree={tree} onDrill={drillInto} />
-            </div>
+          <div className="flex items-start gap-4">
+            <div className="min-w-0 flex-1">
+              {/* d3-hierarchy 真 TreeMap（面积=大小，单击选中，双击下钻） */}
+              <div className="mb-6">
+                <h3 className="mb-2 text-xs font-semibold text-[var(--color-text-secondary)]">
+                  空间分布 TreeMap（单击查看详情，双击进入目录）
+                </h3>
+                <TreeMapView tree={tree} onDrill={drillInto} selected={selected} onSelect={setSelected} />
+              </div>
 
-            {/* 总计 */}
-            <div className="rounded-xl bg-[var(--color-surface)] p-4 text-sm">
-              <span className="text-[var(--color-text-secondary)]">当前目录：</span>
-              <span className="font-mono">{tree.path}</span>
+              {/* 总计 */}
+              <div className="rounded-xl bg-[var(--color-surface)] p-4 text-sm">
+                <span className="text-[var(--color-text-secondary)]">当前目录：</span>
+                <span className="font-mono">{tree.path}</span>
               <span className="mx-2 text-[var(--color-text-secondary)]">|</span>
               <span className="text-[var(--color-text-secondary)]">总计：</span>
               <span className="font-semibold">{formatSize(tree.size)}</span>
@@ -322,7 +379,11 @@ export default function Insight() {
               <span className="text-[var(--color-text-secondary)]">子项：</span>
               <span>{tree.children?.length ?? 0}</span>
             </div>
-          </>
+            </div>
+
+            {/* 右侧详情面板（WizTree 式） */}
+            {selected && <DetailPanel node={selected} parentTotal={tree.size} />}
+          </div>
         )}
 
         {/* ===== 热点目录 tab ===== */}

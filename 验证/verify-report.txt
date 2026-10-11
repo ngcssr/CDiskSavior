@@ -1,0 +1,12 @@
+﻿===== CDisk Savior 实机验证 2026-10-11 12:37:01 =====
+[PASS] 管理员权限  
+[PASS] 主程序存在  C:\Program Files\CDisk Savior\cdisk-savior.exe
+[PASS] MFT 服务侧车存在  C:\Program Files\CDisk Savior\cdisk-savior-svc.exe
+[PASS] 无 PDB 调试符号旁挂  
+[PASS] longPathAware 已嵌入主程序  
+[PASS] 符号已剥离（无 .pdb 引用）  
+[PASS] CDiskSaviorSvc 服务已注册  Status=Stopped StartType=Manual
+[PASS] MFT 管道秒扫端到端  耗时 11.1s
+[PASS] 双实例互斥（第二实例被拒绝）  存活进程数: 1
+[PASS] 快照文件 JSON 结构完好  快照数: 0
+===== 结果：PASS=10 FAIL=0 SKIP=0 =====

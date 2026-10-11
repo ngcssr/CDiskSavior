@@ -41,25 +41,77 @@ pub fn pagefile_check() -> Result<serde_json::Value, String> {
 
 // ============ M2 磁盘透视（P3 真实实现） ============
 
-/// 扫描驱动器（jwalk 并行目录树 → TreeNode）
-/// async + spawn_blocking：全盘扫描可能数秒，不阻塞主线程
+/// 盘符全树缓存（WizTree 式体验：一次扫描，会话内下钻即时返回）。
+/// 服务树含深度/宽度剪枝（深度 4、每层 30），缓存未命中的深层路径回源扫描。
+static DRIVE_TREE_CACHE: std::sync::Mutex<Option<(String, crate::scan::TreeNode)>> =
+    std::sync::Mutex::new(None);
+
+fn normalize_drive_key(p: &str) -> String {
+    p.trim_end_matches(['\\', '/']).to_ascii_uppercase()
+}
+
+/// 在缓存树中按路径查找子树（大小写不敏感，容忍尾部反斜杠差异）
+fn find_subtree(node: &crate::scan::TreeNode, target: &str) -> Option<crate::scan::TreeNode> {
+    if normalize_drive_key(&node.path) == normalize_drive_key(target) {
+        return Some(node.clone());
+    }
+    for c in &node.children {
+        if let Some(found) = find_subtree(c, target) {
+            return Some(found);
+        }
+    }
+    None
+}
+
 #[tauri::command]
-pub async fn scan_drive(app: tauri::AppHandle, root: String) -> Result<crate::scan::TreeNode, String> {
+pub async fn scan_drive(
+    app: tauri::AppHandle,
+    root: String,
+    force_rescan: Option<bool>,
+) -> Result<crate::scan::TreeNode, String> {
     use tauri::Emitter;
+
+    // 缓存命中（非强制刷新）：下钻零耗时（WizTree 式体验）
+    if !force_rescan.unwrap_or(false) {
+        if let Ok(guard) = DRIVE_TREE_CACHE.lock() {
+            if let Some((_, tree)) = guard.as_ref() {
+                if let Some(sub) = find_subtree(tree, &root) {
+                    return Ok(sub);
+                }
+            }
+        }
+    }
+
     tauri::async_runtime::spawn_blocking(move || {
         // MFT 服务快速路径：服务可用且目标是盘符根目录时走秒级扫描，
         // 任何失败（未安装/权限/非盘符）静默回退 jwalk 遍历
-        if crate::svc_client::service_installed() {
-            if let Ok(tree) = crate::svc_client::scan_via_service(&root, |files, bytes, percent, phase| {
+        let scanned_root = root.clone();
+        let tree = if crate::svc_client::service_installed() {
+            crate::svc_client::scan_via_service(&root, |files, bytes, percent, phase| {
                 let _ = app.emit("disk-growth:progress", serde_json::json!({
                     "filesScanned": files, "bytesScanned": bytes,
                     "percent": percent, "phase": phase, "engine": "mft",
                 }));
-            }) {
-                return Ok(tree);
+            })
+            .ok()
+        } else {
+            None
+        };
+        let tree = match tree {
+            Some(t) => t,
+            None => crate::scan::scan_directory(&root)?,
+        };
+        // 扫的是盘符根时刷新缓存（后续下钻走缓存）
+        let is_drive_root = {
+            let t = root.trim_end_matches(['\\', '/']);
+            t.len() == 2 && t.as_bytes()[1] == b':'
+        };
+        if is_drive_root {
+            if let Ok(mut guard) = DRIVE_TREE_CACHE.lock() {
+                *guard = Some((normalize_drive_key(&scanned_root), tree.clone()));
             }
         }
-        crate::scan::scan_directory(&root)
+        Ok(tree)
     })
     .await
     .map_err(|e| format!("扫描任务失败: {}", e))?
