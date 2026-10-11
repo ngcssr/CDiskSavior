@@ -262,7 +262,12 @@ pub struct GrowthReport {
 }
 
 fn snapshot_file(drive: &str) -> Option<PathBuf> {
-    let dir = std::env::var_os("LOCALAPPDATA").map(PathBuf::from)?.join("CDiskSavior");
+    // 便携模式：数据自包含（exe 旁）；安装版：保持既有 LOCALAPPDATA\CDiskSavior
+    let dir = if crate::appdata::portable_mode() {
+        crate::appdata::data_dir().join("snapshots")
+    } else {
+        std::env::var_os("LOCALAPPDATA").map(PathBuf::from)?.join("CDiskSavior")
+    };
     let _ = std::fs::create_dir_all(&dir);
     let safe = drive.replace(['\\', ':', '/'], "_");
     Some(dir.join(format!("snapshot-{}.json", safe)))

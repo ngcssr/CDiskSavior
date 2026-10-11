@@ -42,12 +42,36 @@ fn read_configured_dir() -> Option<PathBuf> {
     if p.is_absolute() { Some(p) } else { None }
 }
 
-/// 当前数据目录（缓存 → 自定义 → 默认）
+/// 便携模式判定（light-c v2.16.15 成品对齐：数据自包含于 exe 旁）：
+/// exe 同目录存在 manifest 标记，或 exe 文件名含 "portable"（单文件发行）。
+pub fn portable_mode() -> bool {
+    let Ok(exe) = std::env::current_exe() else { return false };
+    let Some(dir) = exe.parent() else { return false };
+    if dir.join(PORTABLE_MANIFEST_FILE).exists() {
+        return true;
+    }
+    exe.file_name()
+        .map(|f| f.to_string_lossy().to_ascii_lowercase().contains("portable"))
+        .unwrap_or(false)
+}
+
+/// 当前数据目录（缓存 → 便携 → 自定义 → 默认）
+/// 便携模式：exe 旁 data/（自动创建），与安装版数据完全隔离。
 pub fn data_dir() -> PathBuf {
     if let Some(cached) = DATA_DIR_CACHE.read().unwrap().as_ref() {
         return cached.clone();
     }
-    let resolved = read_configured_dir().unwrap_or_else(default_dir);
+    let resolved = if portable_mode() {
+        let d = std::env::current_exe()
+            .ok()
+            .and_then(|e| e.parent().map(|p| p.to_path_buf()))
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("data");
+        let _ = std::fs::create_dir_all(&d);
+        d
+    } else {
+        read_configured_dir().unwrap_or_else(default_dir)
+    };
     *DATA_DIR_CACHE.write().unwrap() = Some(resolved.clone());
     resolved
 }

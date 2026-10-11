@@ -33,9 +33,9 @@ impl Default for RelocateConfig {
     }
 }
 
-/// 配置文件位置（Tauri appDataDir）
-pub fn config_file(app: &tauri::AppHandle) -> Option<PathBuf> {
-    let dir = app.path().app_data_dir().ok()?;
+/// 配置文件位置：跟随 appdata 解析（便携自包含；安装版与 appDataDir 一致）
+pub fn config_file(_app: &tauri::AppHandle) -> Option<PathBuf> {
+    let dir = crate::appdata::data_dir();
     let _ = std::fs::create_dir_all(&dir);
     Some(dir.join("relocate-config.json"))
 }
@@ -44,25 +44,39 @@ pub fn config_file(app: &tauri::AppHandle) -> Option<PathBuf> {
 pub fn load_config(app: &tauri::AppHandle) -> RelocateConfig {
     if let Some(file) = config_file(app) {
         match state::read_json_self_heal::<RelocateConfig>(&file) {
-            Ok(Some((cfg, recovered))) => {
+            Ok(Some((mut cfg, recovered))) => {
                 if recovered {
                     log::warn!("迁移配置从 .bak 恢复");
                 }
+                merge_new_default_sources(&mut cfg);
                 cfg
             }
             _ => {
                 // 首次使用或损坏 → 默认配置
                 // 尝试 legacy 导入
-                let (cfg, imported) = try_legacy_import();
+                let (mut cfg, imported) = try_legacy_import();
                 if imported {
                     // 保存导入的配置
                     let _ = save_config(app, &cfg);
                 }
+                merge_new_default_sources(&mut cfg);
                 cfg
             }
         }
     } else {
         RelocateConfig::default()
+    }
+}
+
+/// 旧配置合并新增默认源（保留用户已有源的启用状态）：
+/// v56 起默认源 2→5 组，老配置文件缺 Program Files 系源时补齐。
+fn merge_new_default_sources(cfg: &mut RelocateConfig) {
+    let existing: std::collections::HashSet<String> =
+        cfg.scan_sources.iter().map(|s| s.path.to_lowercase()).collect();
+    for src in super::scanner::default_scan_sources() {
+        if !existing.contains(&src.path.to_lowercase()) {
+            cfg.scan_sources.push(src);
+        }
     }
 }
 

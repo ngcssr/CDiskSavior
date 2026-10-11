@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { api_relocate } from "../api/commands";
+import { api_relocate, api_settings } from "../api/commands";
 import type { RelocateTarget, RelocateConfig, MigrationRecord } from "../api/commands";
 import {
   HardDriveDownload, RefreshCw, Play, Pause, X, RotateCcw,
@@ -206,6 +206,98 @@ export default function Relocate() {
                 </span>
               )}
             </div>
+          </section>
+        )}
+
+        {/* 扫描源管理（disk-butler 成品对齐：5 组预置 + 自定义源） */}
+        {config && (
+          <section className="mb-6 rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-sm font-semibold">
+                扫描源（{config.scanSources.length} 个，勾选后参与扫描）
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={async () => {
+                    try {
+                      const dir = await api_settings.pick_folder_dialog("选择要迁移的目录");
+                      if (!dir) return;
+                      const name = dir.split(/[\\/]/).filter(Boolean).pop() ?? "自定义";
+                      setConfig({
+                        ...config,
+                        scanSources: [
+                          ...config.scanSources,
+                          { enabled: true, label: name, path: dir, targetSubdir: name },
+                        ],
+                      });
+                    } catch (e: any) {
+                      setError(e?.message ?? String(e));
+                    }
+                  }}
+                  className="rounded-lg border border-[var(--color-line)] px-3 py-1 text-xs font-medium hover:bg-[var(--color-surface-hover)]"
+                >
+                  + 添加自定义目录
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      await api_relocate.save_relocate_config(config);
+                      setError(null);
+                    } catch (e: any) {
+                      setError(e?.message ?? String(e));
+                    }
+                  }}
+                  className="rounded-lg bg-[var(--color-primary)] px-3 py-1 text-xs font-medium text-white"
+                >
+                  保存
+                </button>
+              </div>
+            </div>
+            <div className="space-y-1">
+              {config.scanSources.map((s, i) => (
+                <div
+                  key={s.path}
+                  className="flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-[var(--color-surface-hover)]"
+                >
+                  <input
+                    type="checkbox"
+                    checked={s.enabled}
+                    onChange={(e) => {
+                      const next = [...config.scanSources];
+                      next[i] = { ...s, enabled: e.target.checked };
+                      setConfig({ ...config, scanSources: next });
+                    }}
+                    className="h-4 w-4 accent-[var(--color-primary)]"
+                  />
+                  <span className="w-36 shrink-0 truncate text-sm font-medium">{s.label}</span>
+                  <span
+                    className="flex-1 truncate font-mono text-xs text-[var(--color-text-secondary)]"
+                    title={s.path}
+                  >
+                    {s.path}
+                  </span>
+                  <span className="shrink-0 rounded bg-[var(--color-surface-hover)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--color-text-secondary)]">
+                    → {s.targetSubdir}
+                  </span>
+                  {i >= 5 && (
+                    <button
+                      onClick={() =>
+                        setConfig({
+                          ...config,
+                          scanSources: config.scanSources.filter((x) => x.path !== s.path),
+                        })
+                      }
+                      className="shrink-0 text-xs text-[var(--color-danger-text)] hover:underline"
+                    >
+                      移除
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
+              Program Files / ProgramData 迁移影响面大，默认关闭；开启前请确认目标盘空间并先备份。
+            </p>
           </section>
         )}
 

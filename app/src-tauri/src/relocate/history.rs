@@ -28,9 +28,9 @@ pub struct HistoryManager {
 }
 
 impl HistoryManager {
-    /// 数据目录（Tauri appDataDir）：com.cdisksavior.app
-    pub fn new(app: &tauri::AppHandle) -> Option<Self> {
-        let dir = app.path().app_data_dir().ok()?;
+    /// 数据目录：跟随 appdata 解析（便携模式自包含于 exe 旁，安装版与 appDataDir 一致）
+    pub fn new(_app: &tauri::AppHandle) -> Option<Self> {
+        let dir = crate::appdata::data_dir();
         let _ = std::fs::create_dir_all(&dir);
         Some(HistoryManager {
             file: dir.join("migration-history.json"),

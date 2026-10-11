@@ -22,7 +22,7 @@ pub struct RelocateTarget {
     pub is_junction: bool,   // 是否已是 junction（需提示用户先恢复）
 }
 
-/// 默认扫描源（设计文档 §6 C8）
+/// 默认扫描源（设计文档 §6 C8 + disk-butler 成品 config.json 对齐 5 组）
 pub fn default_scan_sources() -> Vec<ScanSource> {
     let mut sources = Vec::new();
     for (env_name, label, subdir) in [
@@ -34,6 +34,23 @@ pub fn default_scan_sources() -> Vec<ScanSource> {
                 enabled: true,
                 label: label.into(),
                 path: p,
+                target_subdir: subdir.into(),
+            });
+        }
+    }
+    // 固定路径三组（disk-butler 成品 config.json 同款）：Program Files
+    // 是空间大户（本机 22.3+9.9GB），迁移可行性 disk-butler 已验证；
+    // 高风险，默认关闭由用户显式开启。
+    for (path, label, subdir) in [
+        (r"C:\Program Files", "Program Files", "Program Files"),
+        (r"C:\Program Files (x86)", "Program Files (x86)", "Program Files (x86)"),
+        (r"C:\ProgramData", "ProgramData", "ProgramData"),
+    ] {
+        if std::path::Path::new(path).is_dir() {
+            sources.push(ScanSource {
+                enabled: false,
+                label: label.into(),
+                path: path.into(),
                 target_subdir: subdir.into(),
             });
         }
