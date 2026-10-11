@@ -706,6 +706,10 @@ pub fn derive_stats_from_records(
         let base = dir_path.get(&n).cloned().unwrap_or_default();
         if let Some(kids) = dir_children.get(&n) {
             for &k in kids {
+                // 已解析过（防目录环 self-loop 死循环）则跳过
+                if dir_path.contains_key(&k) {
+                    continue;
+                }
                 let name = resolve_name(k);
                 let full = format!("{}\\{}", base.trim_end_matches('\\'), name);
                 dir_path.insert(k, full);
@@ -747,7 +751,8 @@ pub fn derive_stats_from_records(
         let sz = rec.size[i];
         let mt = rec.mtime[i];
         let mut cur = rec.parent[i];
-        while cur != NO_PARENT && cur != 0 {
+        let mut guard = 0usize; // 防环死循环兜底（正常深度 < 64）
+        while cur != NO_PARENT && cur != 0 && guard < 256 {
             *dir_size.entry(cur).or_insert(0) += sz;
             *dir_count.entry(cur).or_insert(0) += 1;
             dir_mtime
@@ -758,11 +763,20 @@ pub fn derive_stats_from_records(
                     }
                 })
                 .or_insert(mt);
+            // 到达根目录（parent 指向自身）即终止，避免根 self-loop 死循环
+            if cur == ROOT_RECORD {
+                break;
+            }
             let idx = cur as usize;
             if idx >= rec_len {
                 break;
             }
-            cur = rec.parent[idx];
+            let next = rec.parent[idx];
+            if next == cur || next == NO_PARENT || next == 0 {
+                break; // self-loop / 无效父链，防御性终止
+            }
+            cur = next;
+            guard += 1;
         }
     }
     let mut dir_stats: HashMap<std::path::PathBuf, (u64, usize, i64)> =
