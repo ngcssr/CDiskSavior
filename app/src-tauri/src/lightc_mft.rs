@@ -889,11 +889,16 @@ pub struct FullDriveStats {
     pub files: Vec<(String, u64, i64)>,
 }
 
-/// 全盘目录统计 + 文件清单（热点/增长共用；移植自 light-c hotspot mft_scanner 的聚合路径）
+/// 全盘目录统计 + 可选文件清单（热点/增长共用；移植自 light-c hotspot mft_scanner 的聚合路径）
+///
+/// `with_files=false`：只算目录聚合（热点/基线用），省掉 65 万次文件路径拼接，
+/// 与 light-c hotspot mft_scanner.scan_via_mft 同构——后者只产目录统计不产文件清单。
+/// `with_files=true`：额外构建全部文件（路径,大小,mtime）（增长明细用）。
 ///
 /// on_progress(stage, processed) -> bool；stage ∈ enumerate / index / metadata / aggregate
 pub fn full_drive_stats(
     drive_letter: char,
+    with_files: bool,
     on_progress: &dyn Fn(&str, usize) -> bool,
 ) -> Result<FullDriveStats, String> {
     let drive_letter = drive_letter.to_ascii_uppercase();
@@ -933,32 +938,37 @@ pub fn full_drive_stats(
         return Err("扫描已取消".into());
     }
 
-    // 文件路径清单（增长明细用）：拼接父目录路径 + 文件名
-    let name_by_id: HashMap<u64, &str> = entries
-        .iter()
-        .filter(|e| !e.is_dir && e.mft_id != 0)
-        .map(|e| (e.mft_id, e.name.as_str()))
-        .collect();
-    let mut files: Vec<(String, u64, i64)> = Vec::with_capacity(metadata_by_id.len());
-    for (file_id, parent_id) in &parent_pairs {
-        let Some(metadata) = metadata_by_id.get(file_id) else {
-            continue;
-        };
-        if metadata.size == 0 {
-            continue;
+    // 文件路径清单（仅增长明细需要）：拼接父目录路径 + 文件名
+    let files = if with_files {
+        let name_by_id: HashMap<u64, &str> = entries
+            .iter()
+            .filter(|e| !e.is_dir && e.mft_id != 0)
+            .map(|e| (e.mft_id, e.name.as_str()))
+            .collect();
+        let mut v: Vec<(String, u64, i64)> = Vec::with_capacity(metadata_by_id.len());
+        for (file_id, parent_id) in &parent_pairs {
+            let Some(metadata) = metadata_by_id.get(file_id) else {
+                continue;
+            };
+            if metadata.size == 0 {
+                continue;
+            }
+            let Some(parent_path) = directories.get(parent_id).map(|d| &d.path) else {
+                continue;
+            };
+            let Some(name) = name_by_id.get(file_id) else {
+                continue;
+            };
+            v.push((
+                parent_path.join(name).to_string_lossy().to_string(),
+                metadata.size,
+                metadata.modified,
+            ));
         }
-        let Some(parent_path) = directories.get(parent_id).map(|d| &d.path) else {
-            continue;
-        };
-        let Some(name) = name_by_id.get(file_id) else {
-            continue;
-        };
-        files.push((
-            parent_path.join(name).to_string_lossy().to_string(),
-            metadata.size,
-            metadata.modified,
-        ));
-    }
+        v
+    } else {
+        Vec::new()
+    };
 
     // 目录聚合
     #[derive(Clone, Copy, Default)]

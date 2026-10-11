@@ -10,6 +10,8 @@ mod health;
 mod commands;
 mod icon;
 mod lightc_mft;
+#[cfg(test)]
+mod lightc_bench;
 pub mod knowledge;
 pub mod mft_scan;
 mod registry_clean;

@@ -163,7 +163,7 @@ fn scan_hotspot_mft(roots: &[PathBuf], t0: &std::time::Instant) -> Option<Hotspo
     if !crate::lightc_mft::mft_available(drive) {
         return None;
     }
-    let stats = crate::lightc_mft::full_drive_stats(drive, &|_, _| {
+    let stats = crate::lightc_mft::full_drive_stats(drive, false, &|_, _| {
         !HOTSPOT_CANCELLED.load(Ordering::Relaxed)
     })
     .ok()?;
@@ -288,7 +288,7 @@ fn scan_drive_levels_mft(root: &str) -> Option<Vec<(String, u64)>> {
     if !crate::lightc_mft::mft_available(letter) {
         return None;
     }
-    let stats = crate::lightc_mft::full_drive_stats(letter, &|_, _| {
+    let stats = crate::lightc_mft::full_drive_stats(letter, false, &|_, _| {
         !GROWTH_CANCELLED.load(std::sync::atomic::Ordering::Relaxed)
     })
     .ok()?;
@@ -537,7 +537,7 @@ pub fn get_file_change_details(path: &str, offset: usize, limit: usize, drive: &
     // MFT 快路径（light-c 引擎）：目标在 NTFS 盘 + 提权时全盘秒级枚举，按 mtime 过滤
     if let Some(letter) = root.to_string_lossy().chars().next().filter(|c| c.is_ascii_alphabetic()) {
         if crate::lightc_mft::mft_available(letter) {
-            if let Ok(stats) = crate::lightc_mft::full_drive_stats(letter, &|_, _| {
+            if let Ok(stats) = crate::lightc_mft::full_drive_stats(letter, true, &|_, _| {
                 !GROWTH_CANCELLED.load(Ordering::Relaxed)
             }) {
                 let root_str = root.to_string_lossy().to_string();
