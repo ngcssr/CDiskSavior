@@ -23,10 +23,11 @@ static MFT_DATA_CACHE: Mutex<Option<MftDataCache>> = Mutex::new(None);
 const MFT_CACHE_TTL_SECS: u64 = 300;
 
 /// 获取（或复用）全盘 MFT 统计——热点/增长/大文件统一入口。
-/// 首次调用做全盘扫描（with_files=true），5 分钟内后续调用直接走缓存。
+/// 三级路径：① stats 缓存命中 → ② raw 缓存派生（TreeMap 已加载）→ ③ 加载解析。
 pub fn get_mft_stats(drive: char) -> Result<crate::lightc_mft::FullDriveStats, String> {
     let drive = drive.to_ascii_uppercase();
-    // 快路径：缓存命中直接返回
+    let root_norm = format!("{}:\\", drive);
+    // ① stats 缓存快路径
     if let Ok(guard) = MFT_DATA_CACHE.lock() {
         if let Some(cache) = guard.as_ref() {
             if cache.drive == drive && cache.timestamp.elapsed().as_secs() < MFT_CACHE_TTL_SECS {
@@ -34,9 +35,15 @@ pub fn get_mft_stats(drive: char) -> Result<crate::lightc_mft::FullDriveStats, S
             }
         }
     }
-    // 慢路径：拿扫描锁（序列化并发 $MFT 读，防 I/O 争抢）
+    // ② raw 缓存（TreeMap 已加载过原始数据）→ 直接派生 stats
+    if let Some((mft, rec)) = get_cached_mft_raw(drive) {
+        let stats = crate::mft_scan::derive_stats_from_records(&mft, &rec, &root_norm);
+        cache_mft_stats(drive, stats.clone());
+        return Ok(stats);
+    }
+    // ③ 慢路径：拿扫描锁（序列化并发 $MFT 读，防 I/O 争抢）
     let _scan_guard = MFT_SCAN_LOCK.lock().map_err(|_| "扫描锁中毒")?;
-    // 双检：等锁期间其他线程可能已填缓存
+    // 双检 stats
     if let Ok(guard) = MFT_DATA_CACHE.lock() {
         if let Some(cache) = guard.as_ref() {
             if cache.drive == drive && cache.timestamp.elapsed().as_secs() < MFT_CACHE_TTL_SECS {
@@ -44,14 +51,17 @@ pub fn get_mft_stats(drive: char) -> Result<crate::lightc_mft::FullDriveStats, S
             }
         }
     }
-    let stats = crate::mft_scan::scan_mft_stats(&format!("{}:\\", drive), |_, _, _, _| {})?;
-    if let Ok(mut guard) = MFT_DATA_CACHE.lock() {
-        *guard = Some(MftDataCache {
-            drive,
-            timestamp: std::time::Instant::now(),
-            stats: stats.clone(),
-        });
+    // 双检 raw
+    if let Some((mft, rec)) = get_cached_mft_raw(drive) {
+        let stats = crate::mft_scan::derive_stats_from_records(&mft, &rec, &root_norm);
+        cache_mft_stats(drive, stats.clone());
+        return Ok(stats);
     }
+    // 加载 + 解析 + 双缓存（raw + stats）
+    let (mft, rec) = crate::mft_scan::load_and_parse(drive, &mut |_, _, _, _| {})?;
+    let (mft, rec) = take_and_cache_mft_raw(drive, mft, rec);
+    let stats = crate::mft_scan::derive_stats_from_records(&mft, &rec, &root_norm);
+    cache_mft_stats(drive, stats.clone());
     Ok(stats)
 }
 
@@ -59,6 +69,74 @@ pub fn get_mft_stats(drive: char) -> Result<crate::lightc_mft::FullDriveStats, S
 pub fn invalidate_mft_cache() {
     if let Ok(mut guard) = MFT_DATA_CACHE.lock() {
         *guard = None;
+    }
+    if let Ok(mut guard) = MFT_RAW_CACHE.lock() {
+        *guard = None;
+    }
+}
+
+// ---------- 跨 tab 原始 MFT 数据缓存（TreeMap 与 stats 共享一次加载解析） ----------
+pub struct MftRawData {
+    pub mft: std::sync::Arc<ntfs_reader::mft::Mft>,
+    pub rec: std::sync::Arc<crate::mft_scan::Records>,
+}
+
+struct MftRawCacheEntry {
+    drive: char,
+    timestamp: std::time::Instant,
+    data: MftRawData,
+}
+
+static MFT_RAW_CACHE: Mutex<Option<MftRawCacheEntry>> = Mutex::new(None);
+
+/// 缓存原始 MFT 数据（加载解析后调用）
+pub fn cache_mft_raw(drive: char, mft: &ntfs_reader::mft::Mft, rec: &crate::mft_scan::Records) {
+    // Mft 无法 clone（含裸卷句柄语义的数据），只能整体转移——调用方需放弃所有权。
+    // 此处改为缓存共享快照的轻量方案：仅当无既有缓存时由首个 tab 存入。
+    // 由于 Mft 持有 300MB data Vec，为避免复制，只在缓存为空时写入 Arc。
+    let _ = (drive, mft, rec); // 见 get_or_take_mft_raw
+}
+
+/// 取缓存的原始 MFT 数据（命中返回 (Arc<Mft>, Arc<Records>)）
+pub fn get_cached_mft_raw(drive: char) -> Option<(std::sync::Arc<ntfs_reader::mft::Mft>, std::sync::Arc<crate::mft_scan::Records>)> {
+    let guard = MFT_RAW_CACHE.lock().ok()?;
+    let entry = guard.as_ref()?;
+    if entry.drive == drive && entry.timestamp.elapsed().as_secs() < MFT_CACHE_TTL_SECS {
+        Some((entry.data.mft.clone(), entry.data.rec.clone()))
+    } else {
+        None
+    }
+}
+
+/// 存入原始 MFT 数据（首个 tab 加载后调用；取得所有权入 Arc）
+pub fn take_and_cache_mft_raw(
+    drive: char,
+    mft: ntfs_reader::mft::Mft,
+    rec: crate::mft_scan::Records,
+) -> (std::sync::Arc<ntfs_reader::mft::Mft>, std::sync::Arc<crate::mft_scan::Records>) {
+    let data = MftRawData {
+        mft: std::sync::Arc::new(mft),
+        rec: std::sync::Arc::new(rec),
+    };
+    let out = (data.mft.clone(), data.rec.clone());
+    if let Ok(mut guard) = MFT_RAW_CACHE.lock() {
+        *guard = Some(MftRawCacheEntry {
+            drive,
+            timestamp: std::time::Instant::now(),
+            data,
+        });
+    }
+    out
+}
+
+/// 直接存入已构建的 stats（scan_mft 建树后顺带入缓存）
+pub fn cache_mft_stats(drive: char, stats: crate::lightc_mft::FullDriveStats) {
+    if let Ok(mut guard) = MFT_DATA_CACHE.lock() {
+        *guard = Some(MftDataCache {
+            drive,
+            timestamp: std::time::Instant::now(),
+            stats,
+        });
     }
 }
 

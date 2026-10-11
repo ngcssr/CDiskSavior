@@ -59,7 +59,7 @@ const NS_WIN32: u8 = 1;
 const NS_WIN32_DOS: u8 = 3;
 
 /// 全部 MFT 记录提炼出的信息（按记录号索引的稠密数组）。
-struct Records {
+pub struct Records {
     /// 记录号 -> 父目录记录号（NO_PARENT = 无效/未使用记录）
     parent: Vec<u64>,
     /// 记录号 -> 文件自身大小（目录为 0）
@@ -637,25 +637,16 @@ pub fn scan_mft<F: FnMut(u64, u64, f32, &str)>(
     mut progress: F,
 ) -> Result<TreeNode, String> {
     let (letter, root_norm) = parse_root(root)?;
-    // 载入整张 MFT（可达 GB 级）：大块顺序读，按已读字节上报真实进度
-    progress(0, 0, 0.0, "正在载入文件表");
-    let volume = Volume::new(format!("\\\\.\\{}:", letter))
-        .map_err(|e| format!("打开卷失败（需要管理员权限）：{:?}", e))?;
-    let mut last_load = std::time::Instant::now();
-    let mft = load_mft_fast(volume, &mut |loaded, total| {
-        // 载入阶段自带节流（每 8MB 回调一次，再护一道 100ms）
-        if last_load.elapsed().as_millis() >= 100 || loaded >= total {
-            last_load = std::time::Instant::now();
-            progress(0, 0, (loaded as f32 / total.max(1) as f32) * 100.0, "正在载入文件表");
+    // 优先走共享原始缓存（其他 tab 已加载时跳过读盘+解析）
+    let (mft, rec) = match crate::growth::get_cached_mft_raw(letter) {
+        Some(cached) => cached,
+        None => {
+            let loaded = load_and_parse(letter, &mut progress)?;
+            crate::growth::take_and_cache_mft_raw(letter, loaded.0, loaded.1)
         }
-    })?;
+    };
 
-    let mut last = (0u64, 0u64);
-    let rec = collect_records(&mft, &mut |f, b, p| {
-        last = (f, b);
-        progress(f, b, p, "正在统计文件");
-    });
-
+    let last = (0u64, 0u64);
     progress(last.0, last.1, 100.0, "正在汇总目录");
     let index = aggregate(&rec);
 
@@ -666,7 +657,118 @@ pub fn scan_mft<F: FnMut(u64, u64, f32, &str)>(
             .map(|nm| nm.to_string())
             .unwrap_or_else(|| format!("#{}", n))
     };
-    Ok(build_tree(&rec, &index, &resolve, ROOT_RECORD, root_norm.clone(), &root_norm, 0))
+    let tree = build_tree(&rec, &index, &resolve, ROOT_RECORD, root_norm.clone(), &root_norm, 0);
+    // 顺带把 stats 也入缓存：后续热点/大文件/增长 tab 直接命中
+    let stats = derive_stats_from_records(&mft, &rec, &root_norm);
+    crate::growth::cache_mft_stats(letter, stats);
+    Ok(tree)
+}
+
+/// 从已解析的 Records 派生 FullDriveStats（dir_stats + files 清单）。
+/// 被 scan_mft（TreeMap 顺带产出）与 scan_mft_stats（stats 主路径）共用。
+pub fn derive_stats_from_records(
+    mft: &std::sync::Arc<ntfs_reader::mft::Mft>,
+    rec: &std::sync::Arc<Records>,
+    root_norm: &str,
+) -> crate::lightc_mft::FullDriveStats {
+    use std::collections::HashMap;
+    let rec = rec.as_ref();
+    let mft = mft.as_ref();
+    let resolve_name = |n: u64| -> String {
+        mft.get_record(n)
+            .and_then(|f| f.get_best_file_name(&mft))
+            .map(|nm| nm.to_string())
+            .unwrap_or_else(|| format!("#{}", n))
+    };
+    let mut dir_path: HashMap<u64, String> = HashMap::new();
+    dir_path.insert(ROOT_RECORD, root_norm.to_string());
+    let rec_len = rec.parent.len();
+    loop {
+        let mut resolved = 0usize;
+        for i in (FIRST_NORMAL_RECORD as usize)..rec_len {
+            if !rec.is_dir[i] {
+                continue;
+            }
+            let n = i as u64;
+            if dir_path.contains_key(&n) {
+                resolved += 1;
+                continue;
+            }
+            let p = rec.parent[i];
+            if p == NO_PARENT || p == 0 {
+                continue;
+            }
+            if let Some(pp) = dir_path.get(&p) {
+                let name = resolve_name(n);
+                let full = format!("{}\\{}", pp.trim_end_matches('\\'), name);
+                dir_path.insert(n, full);
+                resolved += 1;
+            }
+        }
+        if resolved >= dir_path.len() - 1 {
+            break;
+        }
+    }
+    let mut files: Vec<(String, u64, i64)> = Vec::with_capacity(100_000);
+    for i in (FIRST_NORMAL_RECORD as usize)..rec_len {
+        if rec.is_dir[i] || rec.size[i] == 0 {
+            continue;
+        }
+        let parent = rec.parent[i];
+        if parent == NO_PARENT || parent == 0 {
+            continue;
+        }
+        let Some(dir) = dir_path.get(&parent) else {
+            continue;
+        };
+        let name = resolve_name(i as u64);
+        files.push((
+            format!("{}\\{}", dir.trim_end_matches('\\'), name),
+            rec.size[i],
+            rec.mtime[i],
+        ));
+    }
+    let mut dir_stats: HashMap<std::path::PathBuf, (u64, usize, i64)> =
+        HashMap::with_capacity(dir_path.len());
+    for full in dir_path.values() {
+        dir_stats.insert(std::path::PathBuf::from(full), (0, 0, 0));
+    }
+    for (path, size, mtime) in &files {
+        let p = std::path::Path::new(path);
+        let mut anc = p.parent();
+        while let Some(d) = anc {
+            if let Some(e) = dir_stats.get_mut(d) {
+                e.0 += size;
+                e.1 += 1;
+                if *mtime > e.2 {
+                    e.2 = *mtime;
+                }
+            }
+            anc = d.parent();
+        }
+    }
+    crate::lightc_mft::FullDriveStats { dir_stats, files }
+}
+
+/// 加载 + 解析（可被多个 tab 共享的原始阶段）
+pub fn load_and_parse<F: FnMut(u64, u64, f32, &str)>(
+    letter: char,
+    progress: &mut F,
+) -> Result<(Mft, Records), String> {
+    progress(0, 0, 0.0, "正在载入文件表");
+    let volume = Volume::new(format!("\\\\.\\{}:", letter))
+        .map_err(|e| format!("打开卷失败（需要管理员权限）：{:?}", e))?;
+    let mut last_load = std::time::Instant::now();
+    let mft = load_mft_fast(volume, &mut |loaded, total| {
+        if last_load.elapsed().as_millis() >= 100 || loaded >= total {
+            last_load = std::time::Instant::now();
+            progress(0, 0, (loaded as f32 / total.max(1) as f32) * 100.0, "正在载入文件表");
+        }
+    })?;
+    let rec = collect_records(&mft, &mut |f, b, p| {
+        progress(f, b, p, "正在统计文件");
+    });
+    Ok((mft, rec))
 }
 
 /// 物理极限版全盘统计（WizTree 式单遍架构）：
