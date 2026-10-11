@@ -55,11 +55,27 @@ if (Test-Path $exe) {
 $svcObj = Get-Service -Name 'CDiskSaviorSvc' -ErrorAction SilentlyContinue
 Check "CDiskSaviorSvc 服务已注册" ($null -ne $svcObj) $(if ($svcObj) { "Status=$($svcObj.Status) StartType=$($svcObj.StartType)" })
 
-# ---- 4. 管道端到端 MFT 秒扫（服务按需启动）----
-$pipeResult = $null
+# ---- 4. 管道端到端 MFT 秒扫（先按需拉起服务，与应用客户端同链路）----
 try {
-    $pipe = New-Object System.IO.Pipes.NamedPipeClientStream('.', 'cdisk-savior-scan', [System.IO.Pipes.PipeDirection]::InOut)
-    $pipe.Connect(15000)  # 15s 等待服务按需拉起
+    # 4a. 服务是 OnDemand（Manual）：先经 SCM 拉起（与应用 ensure_service_started 同路径）
+    $svcObj2 = Get-Service -Name 'CDiskSaviorSvc' -ErrorAction SilentlyContinue
+    if ($null -eq $svcObj2) { throw "服务未注册，无法测试管道" }
+    if ($svcObj2.Status -ne 'Running') {
+        Start-Service -Name 'CDiskSaviorSvc' -ErrorAction Stop
+    }
+    # 4b. 等待管道就绪（服务创建管道需要 1~2 秒）
+    $pipe = $null
+    for ($i = 0; $i -lt 30; $i++) {
+        try {
+            $pipe = New-Object System.IO.Pipes.NamedPipeClientStream('.', 'cdisk-savior-scan', [System.IO.Pipes.PipeDirection]::InOut)
+            $pipe.Connect(2000)
+            break
+        } catch {
+            if ($pipe) { $pipe.Dispose(); $pipe = $null }
+            Start-Sleep -Milliseconds 500
+        }
+    }
+    if (-not $pipe) { throw "服务已启动但管道 15s 内未就绪" }
     $writer = New-Object System.IO.StreamWriter($pipe)
     $writer.AutoFlush = $true
     $reader = New-Object System.IO.StreamReader($pipe)
@@ -67,13 +83,11 @@ try {
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     $lastLine = $null; $done = $false
     while ($sw.Elapsed.TotalSeconds -lt 120) {
-        if ($pipe.IsMessageAvailable -or $true) {
-            $line = $reader.ReadLine()
-            if ($null -eq $line) { break }
-            $lastLine = $line
-            if ($line -match '"type"\s*:\s*"done"') { $done = $true; break }
-            if ($line -match '"type"\s*:\s*"error"') { break }
-        }
+        $line = $reader.ReadLine()
+        if ($null -eq $line) { break }
+        $lastLine = $line
+        if ($line -match '"type"\s*:\s*"done"') { $done = $true; break }
+        if ($line -match '"type"\s*:\s*"error"') { break }
     }
     $sw.Stop()
     if ($done -and $lastLine -match '"size"\s*:\s*(\d+)') {
