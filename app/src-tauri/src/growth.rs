@@ -44,7 +44,7 @@ pub fn get_mft_stats(drive: char) -> Result<crate::lightc_mft::FullDriveStats, S
             }
         }
     }
-    let stats = crate::lightc_mft::full_drive_stats(drive, true, &|_, _| true)?;
+    let stats = crate::mft_scan::scan_mft_stats(&format!("{}:\\", drive), |_, _, _, _| {})?;
     if let Ok(mut guard) = MFT_DATA_CACHE.lock() {
         *guard = Some(MftDataCache {
             drive,
