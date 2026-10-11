@@ -883,6 +883,7 @@ pub fn scan_top_files(
 /// 全目录聚合统计：目录路径 → (总大小, 文件数, 最新修改时间 ms)
 pub type DirStatsMap = HashMap<PathBuf, (u64, usize, i64)>;
 
+#[derive(Clone)]
 pub struct FullDriveStats {
     pub dir_stats: DirStatsMap,
     /// 全部文件（路径, 大小, 修改时间 s）

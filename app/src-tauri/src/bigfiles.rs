@@ -71,18 +71,20 @@ fn drive_root_letter(root: &str) -> Option<char> {
 fn scan_large_files_mft(drive: char, min_size: u64, on_progress: &dyn Fn(usize)) -> Result<LargeFileReport, String> {
     CANCELLED.store(false, Ordering::Relaxed);
     let t0 = std::time::Instant::now();
-    let cancelled_check = |_stage: &str, processed: usize| {
-        if CANCELLED.load(Ordering::Relaxed) {
-            return false;
-        }
-        on_progress(processed);
-        true
-    };
 
-    // 阈值过滤在 MFT Top-N 之后做（Top-N 取 200 上限，通常远大于阈值筛选结果）
-    let mut files = crate::lightc_mft::scan_top_files(drive, MAX_RESULTS, &cancelled_check)
-        .map_err(|e| e)?;
-    files.retain(|(_, size, _)| *size >= min_size);
+    // 统一 MFT 数据缓存（与热点/增长共享一次全盘读取，防并发 $MFT 读盘争抢）
+    // 从缓存 files 列表派生 Top-N：排序取前 MAX_RESULTS 条
+    let stats = crate::growth::get_mft_stats(drive)?;
+    on_progress(stats.files.len());
+
+    let mut files: Vec<(String, u64, i64)> = stats
+        .files
+        .iter()
+        .filter(|(_, size, _)| *size >= min_size)
+        .map(|(p, s, m)| (p.clone(), *s, *m))
+        .collect();
+    files.sort_by(|a, b| b.1.cmp(&a.1));
+    files.truncate(MAX_RESULTS);
 
     let entries: Vec<LargeFileEntry> = files
         .into_iter()

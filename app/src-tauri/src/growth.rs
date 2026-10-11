@@ -5,6 +5,62 @@
 
 use serde::Serialize;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+// ---------- 统一 MFT 数据缓存（一次读取，热点/增长/大文件共享） ----------
+// 防止并发 $MFT 读盘争抢（TreeMap 后台扫 + 用户点 tab 触发第二路读 = I/O 互抢）。
+// 缓存有效期 5 分钟；扫描锁保证同盘同时只有一路 $MFT 读取。
+
+struct MftDataCache {
+    drive: char,
+    timestamp: std::time::Instant,
+    stats: crate::lightc_mft::FullDriveStats,
+}
+
+static MFT_SCAN_LOCK: Mutex<()> = Mutex::new(());
+static MFT_DATA_CACHE: Mutex<Option<MftDataCache>> = Mutex::new(None);
+
+const MFT_CACHE_TTL_SECS: u64 = 300;
+
+/// 获取（或复用）全盘 MFT 统计——热点/增长/大文件统一入口。
+/// 首次调用做全盘扫描（with_files=true），5 分钟内后续调用直接走缓存。
+pub fn get_mft_stats(drive: char) -> Result<crate::lightc_mft::FullDriveStats, String> {
+    let drive = drive.to_ascii_uppercase();
+    // 快路径：缓存命中直接返回
+    if let Ok(guard) = MFT_DATA_CACHE.lock() {
+        if let Some(cache) = guard.as_ref() {
+            if cache.drive == drive && cache.timestamp.elapsed().as_secs() < MFT_CACHE_TTL_SECS {
+                return Ok(cache.stats.clone());
+            }
+        }
+    }
+    // 慢路径：拿扫描锁（序列化并发 $MFT 读，防 I/O 争抢）
+    let _scan_guard = MFT_SCAN_LOCK.lock().map_err(|_| "扫描锁中毒")?;
+    // 双检：等锁期间其他线程可能已填缓存
+    if let Ok(guard) = MFT_DATA_CACHE.lock() {
+        if let Some(cache) = guard.as_ref() {
+            if cache.drive == drive && cache.timestamp.elapsed().as_secs() < MFT_CACHE_TTL_SECS {
+                return Ok(cache.stats.clone());
+            }
+        }
+    }
+    let stats = crate::lightc_mft::full_drive_stats(drive, true, &|_, _| true)?;
+    if let Ok(mut guard) = MFT_DATA_CACHE.lock() {
+        *guard = Some(MftDataCache {
+            drive,
+            timestamp: std::time::Instant::now(),
+            stats: stats.clone(),
+        });
+    }
+    Ok(stats)
+}
+
+/// 使 MFT 缓存失效（用户点"重新扫描"时调用）
+pub fn invalidate_mft_cache() {
+    if let Ok(mut guard) = MFT_DATA_CACHE.lock() {
+        *guard = None;
+    }
+}
 
 // ---------- 热点目录 ----------
 
@@ -163,10 +219,7 @@ fn scan_hotspot_mft(roots: &[PathBuf], t0: &std::time::Instant) -> Option<Hotspo
     if !crate::lightc_mft::mft_available(drive) {
         return None;
     }
-    let stats = crate::lightc_mft::full_drive_stats(drive, false, &|_, _| {
-        !HOTSPOT_CANCELLED.load(Ordering::Relaxed)
-    })
-    .ok()?;
+    let stats = get_mft_stats(drive).ok()?;
 
     let mut entries: Vec<HotspotEntry> = Vec::new();
     let mut scanned = 0usize;
@@ -288,10 +341,7 @@ fn scan_drive_levels_mft(root: &str) -> Option<Vec<(String, u64)>> {
     if !crate::lightc_mft::mft_available(letter) {
         return None;
     }
-    let stats = crate::lightc_mft::full_drive_stats(letter, false, &|_, _| {
-        !GROWTH_CANCELLED.load(std::sync::atomic::Ordering::Relaxed)
-    })
-    .ok()?;
+    let stats = get_mft_stats(letter).ok()?;
 
     let root_path = PathBuf::from(root);
     let mut out: Vec<(String, u64)> = stats
@@ -537,9 +587,7 @@ pub fn get_file_change_details(path: &str, offset: usize, limit: usize, drive: &
     // MFT 快路径（light-c 引擎）：目标在 NTFS 盘 + 提权时全盘秒级枚举，按 mtime 过滤
     if let Some(letter) = root.to_string_lossy().chars().next().filter(|c| c.is_ascii_alphabetic()) {
         if crate::lightc_mft::mft_available(letter) {
-            if let Ok(stats) = crate::lightc_mft::full_drive_stats(letter, true, &|_, _| {
-                !GROWTH_CANCELLED.load(Ordering::Relaxed)
-            }) {
+            if let Ok(stats) = get_mft_stats(letter) {
                 let root_str = root.to_string_lossy().to_string();
                 let mut entries: Vec<FileDetailEntry> = stats
                     .files
