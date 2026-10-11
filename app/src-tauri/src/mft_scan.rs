@@ -671,41 +671,50 @@ pub fn derive_stats_from_records(
     use std::collections::HashMap;
     let rec = rec.as_ref();
     let mft = mft.as_ref();
-    let resolve_name = |n: u64| -> String {
-        mft.get_record(n)
+
+    // 1. 名字缓存：每个记录号只解析一次 get_best_file_name（慢路径，避免 67 万次重复）
+    let mut name_cache: HashMap<u64, String> = HashMap::new();
+    let mut resolve_name = |n: u64| -> String {
+        if let Some(s) = name_cache.get(&n) {
+            return s.clone();
+        }
+        let s = mft
+            .get_record(n)
             .and_then(|f| f.get_best_file_name(&mft))
             .map(|nm| nm.to_string())
-            .unwrap_or_else(|| format!("#{}", n))
+            .unwrap_or_else(|| format!("#{}", n));
+        name_cache.insert(n, s.clone());
+        s
     };
-    let mut dir_path: HashMap<u64, String> = HashMap::new();
-    dir_path.insert(ROOT_RECORD, root_norm.to_string());
+
     let rec_len = rec.parent.len();
-    loop {
-        let mut resolved = 0usize;
-        for i in (FIRST_NORMAL_RECORD as usize)..rec_len {
-            if !rec.is_dir[i] {
-                continue;
-            }
-            let n = i as u64;
-            if dir_path.contains_key(&n) {
-                resolved += 1;
-                continue;
-            }
+    // 2. parent → children（目录）一次遍历建反向索引
+    let mut dir_children: HashMap<u64, Vec<u64>> = HashMap::new();
+    for i in (FIRST_NORMAL_RECORD as usize)..rec_len {
+        if rec.is_dir[i] {
             let p = rec.parent[i];
-            if p == NO_PARENT || p == 0 {
-                continue;
+            if p != NO_PARENT && p != 0 {
+                dir_children.entry(p).or_default().push(i as u64);
             }
-            if let Some(pp) = dir_path.get(&p) {
-                let name = resolve_name(n);
-                let full = format!("{}\\{}", pp.trim_end_matches('\\'), name);
-                dir_path.insert(n, full);
-                resolved += 1;
-            }
-        }
-        if resolved >= dir_path.len() - 1 {
-            break;
         }
     }
+    // 3. BFS 构建目录路径表（每个目录 O(1)，替代原迭代收敛循环 O(N×depth)）
+    let mut dir_path: HashMap<u64, String> = HashMap::new();
+    dir_path.insert(ROOT_RECORD, root_norm.to_string());
+    let mut queue: Vec<u64> = vec![ROOT_RECORD];
+    while let Some(n) = queue.pop() {
+        let base = dir_path.get(&n).cloned().unwrap_or_default();
+        if let Some(kids) = dir_children.get(&n) {
+            for &k in kids {
+                let name = resolve_name(k);
+                let full = format!("{}\\{}", base.trim_end_matches('\\'), name);
+                dir_path.insert(k, full);
+                queue.push(k);
+            }
+        }
+    }
+
+    // 4. 文件清单（大小 > 0），名字走缓存
     let mut files: Vec<(String, u64, i64)> = Vec::with_capacity(100_000);
     for i in (FIRST_NORMAL_RECORD as usize)..rec_len {
         if rec.is_dir[i] || rec.size[i] == 0 {
@@ -725,25 +734,53 @@ pub fn derive_stats_from_records(
             rec.mtime[i],
         ));
     }
-    let mut dir_stats: HashMap<std::path::PathBuf, (u64, usize, i64)> =
-        HashMap::with_capacity(dir_path.len());
-    for full in dir_path.values() {
-        dir_stats.insert(std::path::PathBuf::from(full), (0, 0, 0));
-    }
-    for (path, size, mtime) in &files {
-        let p = std::path::Path::new(path);
-        let mut anc = p.parent();
-        while let Some(d) = anc {
-            if let Some(e) = dir_stats.get_mut(d) {
-                e.0 += size;
-                e.1 += 1;
-                if *mtime > e.2 {
-                    e.2 = *mtime;
-                }
+
+    // 5. 目录聚合：用记录号（u64）聚合而非路径（PathBuf），最后统一转路径
+    //    u64 哈希 + 记录号父链遍历，远快于 PathBuf 字符串哈希 + Path::parent()
+    let mut dir_size: HashMap<u64, u64> = HashMap::with_capacity(dir_path.len());
+    let mut dir_count: HashMap<u64, usize> = HashMap::with_capacity(dir_path.len());
+    let mut dir_mtime: HashMap<u64, i64> = HashMap::with_capacity(dir_path.len());
+    for i in (FIRST_NORMAL_RECORD as usize)..rec_len {
+        if rec.is_dir[i] || rec.size[i] == 0 {
+            continue;
+        }
+        let sz = rec.size[i];
+        let mt = rec.mtime[i];
+        let mut cur = rec.parent[i];
+        while cur != NO_PARENT && cur != 0 {
+            *dir_size.entry(cur).or_insert(0) += sz;
+            *dir_count.entry(cur).or_insert(0) += 1;
+            dir_mtime
+                .entry(cur)
+                .and_modify(|m| {
+                    if mt > *m {
+                        *m = mt;
+                    }
+                })
+                .or_insert(mt);
+            let idx = cur as usize;
+            if idx >= rec_len {
+                break;
             }
-            anc = d.parent();
+            cur = rec.parent[idx];
         }
     }
+    let mut dir_stats: HashMap<std::path::PathBuf, (u64, usize, i64)> =
+        HashMap::with_capacity(dir_path.len());
+    for (n, sz) in dir_size {
+        if let Some(full) = dir_path.get(&n) {
+            let cnt = dir_count.get(&n).copied().unwrap_or(0);
+            let mt = dir_mtime.get(&n).copied().unwrap_or(0);
+            dir_stats.insert(std::path::PathBuf::from(full), (sz, cnt, mt));
+        }
+    }
+    // 空目录（无文件）也补零值条目
+    for full in dir_path.values() {
+        dir_stats
+            .entry(std::path::PathBuf::from(full))
+            .or_insert((0, 0, 0));
+    }
+
     crate::lightc_mft::FullDriveStats { dir_stats, files }
 }
 

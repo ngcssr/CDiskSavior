@@ -83,10 +83,8 @@ pub async fn scan_drive(
     }
 
     tauri::async_runtime::spawn_blocking(move || {
-        // 快路径优先级：① MFT 服务（SYSTEM 权限，管道）→ ② 进程内 MFT 引擎
-        // （提权 + NTFS，与服务同代码 mft_scan::scan_mft，rayon 并行）
-        // → ③ jwalk 慢速遍历（非提权/非 NTFS 兜底）
-        // 便携版无服务侧车时 ② 生效——与 LightC 便携版同架构（进程内 MFT，无需服务）
+        // 快路径优先级：提权时进程内单遍 MFT（最快）→ 未提权时服务管道
+        // （SYSTEM 代做）→ jwalk 兜底。避免提权时误走旧版服务侧车拖慢。
         let scanned_root = root.clone();
         let emit_progress = |files: u64, bytes: u64, percent: f32, phase: &str| {
             let _ = app.emit("disk-growth:progress", serde_json::json!({
@@ -94,41 +92,34 @@ pub async fn scan_drive(
                 "percent": percent, "phase": phase, "engine": "mft",
             }));
         };
-        let tree = if crate::svc_client::service_installed() {
+        let is_drive_root = {
+            let t = root.trim_end_matches(['\\', '/']);
+            t.len() == 2 && t.as_bytes()[1] == b':'
+        };
+        let letter = root.chars().next().filter(|c| c.is_ascii_alphabetic());
+        let elevated = crate::lightc_mft::is_elevated();
+
+        let tree = if elevated && is_drive_root && letter.is_some()
+            && crate::lightc_mft::mft_available(letter.unwrap())
+        {
+            // 进程内单遍 MFT（提权时最快，不依赖服务侧车版本）
+            match crate::mft_scan::scan_mft(&root, emit_progress) {
+                Ok(t) => match serde_json::to_value(&t)
+                    .and_then(|v| serde_json::from_value::<crate::scan::TreeNode>(v))
+                {
+                    Ok(tree) => Some(tree),
+                    Err(_) => None,
+                },
+                Err(_) => None,
+            }
+        } else if !elevated && crate::svc_client::service_installed() {
             crate::svc_client::scan_via_service(&root, emit_progress).ok()
         } else {
             None
         };
         let tree = match tree {
             Some(t) => t,
-            None => {
-                // ② 进程内 MFT 引擎（提权 + 盘符根 + NTFS 时可用）
-                let is_drive_root = {
-                    let t = root.trim_end_matches(['\\', '/']);
-                    t.len() == 2 && t.as_bytes()[1] == b':'
-                };
-                let letter = root.chars().next().filter(|c| c.is_ascii_alphabetic());
-                let mft_inproc = is_drive_root
-                    && letter.is_some()
-                    && crate::lightc_mft::mft_available(letter.unwrap());
-                if mft_inproc {
-                    match crate::mft_scan::scan_mft(&root, emit_progress) {
-                        Ok(t) => {
-                            // mft_scan::TreeNode（enum 字段）→ scan::TreeNode（string 字段）：
-                            // serde JSON 中转（与服务管道路径的序列化协议一致）
-                            match serde_json::to_value(&t)
-                                .and_then(|v| serde_json::from_value::<crate::scan::TreeNode>(v))
-                            {
-                                Ok(tree) => tree,
-                                Err(_) => crate::scan::scan_directory(&root)?,
-                            }
-                        }
-                        Err(_) => crate::scan::scan_directory(&root)?,
-                    }
-                } else {
-                    crate::scan::scan_directory(&root)?
-                }
-            }
+            None => crate::scan::scan_directory(&root)?,
         };
         // 扫的是盘符根时刷新缓存（后续下钻走缓存）
         let is_drive_root = {
