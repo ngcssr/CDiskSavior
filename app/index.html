@@ -8,6 +8,16 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // 启动诊断（定位白屏阶段）：左上角显示各阶段耗时，稳定后移除
+      var __t0 = performance.now();
+      var __el = document.createElement("div");
+      __el.style.cssText = "position:fixed;top:8px;left:8px;z-index:99999;background:rgba(0,0,0,.85);color:#0f0;font:12px monospace;padding:4px 8px;border-radius:4px;pointer-events:none;";
+      document.body.appendChild(__el);
+      window.__perf = function (n) { __el.textContent = n + " : " + Math.round(performance.now() - __t0) + "ms"; };
+      window.__perf("html parsed");
+      window.addEventListener("load", function () { window.__perf("window load"); });
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

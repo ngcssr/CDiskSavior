@@ -8,3 +8,6 @@ createRoot(document.getElementById("root")!).render(
     <App />
   </StrictMode>
 );
+
+// 启动诊断：React 渲染完成标记
+(window as any).__perf?.("react rendered");
