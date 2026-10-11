@@ -109,10 +109,10 @@ fn disk_score_calc() -> (f64, u32) {
 }
 
 fn disk_free_total(root: &str) -> (u64, u64) {
-    use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+    use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
     let wide: Vec<u16> = root.encode_utf16().chain(std::iter::once(0)).collect();
     let (mut free, mut total, mut tf) = (0u64, 0u64, 0u64);
-    unsafe { GetDiskFreeSpaceExW(wide.as_ptr(), &mut free, &mut total, &mut tf); }
+    unsafe { let _ = GetDiskFreeSpaceExW(windows::core::PCWSTR(wide.as_ptr()), Some(&mut free), Some(&mut total), Some(&mut tf)); }
     (free, total)
 }
 

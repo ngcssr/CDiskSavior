@@ -18,9 +18,7 @@ pub enum TargetRootCheck {
 /// 3. 路径不能为空或纯根（如 G:\）
 /// 4. 目标目录不存在时可以创建，但父目录链必须可写
 pub fn validate_target_root(root: &Path) -> TargetRootCheck {
-    use windows_sys::Win32::Storage::FileSystem::{
-        GetDriveTypeW,
-    };
+    use windows::Win32::Storage::FileSystem::GetDriveTypeW;
 
     // 1. 解析盘符
     let root_str = root.to_string_lossy();
@@ -39,7 +37,7 @@ pub fn validate_target_root(root: &Path) -> TargetRootCheck {
         .collect();
 
     unsafe {
-        let dt = GetDriveTypeW(drive_path.as_ptr());
+        let dt = GetDriveTypeW(windows::core::PCWSTR(drive_path.as_ptr()));
         if dt != 3 {
             let type_name = match dt {
                 2 => "可移动磁盘（U 盘等）",
@@ -94,7 +92,7 @@ pub fn validate_target_root(root: &Path) -> TargetRootCheck {
 /// 枚举本地固定磁盘 → 排除系统盘 → 排除 OneDrive → 取剩余空间最大者。
 /// 无候选返回 None（单盘机器，由 UI 引导用户）。
 pub fn resolve_default_target_root() -> Option<PathBuf> {
-    use windows_sys::Win32::Storage::FileSystem::{
+    use windows::Win32::Storage::FileSystem::{
         GetDiskFreeSpaceExW, GetDriveTypeW, GetLogicalDrives,
     };
 
@@ -112,7 +110,7 @@ pub fn resolve_default_target_root() -> Option<PathBuf> {
             let drive_str = format!("{}:\\", letter);
             let wide: Vec<u16> = drive_str.encode_utf16().chain(std::iter::once(0)).collect();
 
-            if GetDriveTypeW(wide.as_ptr()) != 3 {
+            if GetDriveTypeW(windows::core::PCWSTR(wide.as_ptr())) != 3 {
                 continue;
             }
             // 排除系统盘
@@ -133,7 +131,7 @@ pub fn resolve_default_target_root() -> Option<PathBuf> {
             let mut free: u64 = 0;
             let mut total: u64 = 0;
             let mut _total_free: u64 = 0;
-            if GetDiskFreeSpaceExW(wide.as_ptr(), &mut free, &mut total, &mut _total_free) != 0 {
+            if GetDiskFreeSpaceExW(windows::core::PCWSTR(wide.as_ptr()), Some(&mut free), Some(&mut total), Some(&mut _total_free)).is_ok() {
                 candidates.push((letter, free));
             }
         }
@@ -146,7 +144,7 @@ pub fn resolve_default_target_root() -> Option<PathBuf> {
 
 /// 空间预检（V10 修复）：目标盘剩余 >= 源大小 × 1.1
 pub fn check_disk_space(target_root: &Path, source_size: u64) -> TargetRootCheck {
-    use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+    use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
 
     let root_str = target_root.to_string_lossy().to_string();
     // 找到盘符根
@@ -161,7 +159,7 @@ pub fn check_disk_space(target_root: &Path, source_size: u64) -> TargetRootCheck
     let mut total: u64 = 0;
     let mut total_free: u64 = 0;
     unsafe {
-        if GetDiskFreeSpaceExW(wide.as_ptr(), &mut free, &mut total, &mut total_free) == 0 {
+        if GetDiskFreeSpaceExW(windows::core::PCWSTR(wide.as_ptr()), Some(&mut free), Some(&mut total), Some(&mut total_free)).is_err() {
             return TargetRootCheck::Rejected("无法查询目标盘剩余空间".into());
         }
     }

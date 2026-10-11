@@ -9,13 +9,13 @@
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
-use windows_sys::Win32::Foundation::SYSTEMTIME;
-use windows_sys::Win32::Storage::FileSystem::{
-    GetDiskFreeSpaceExW, GetDriveTypeW, GetLogicalDrives, GetVolumeInformationW,
+use windows::Win32::Foundation::SYSTEMTIME;
+use windows::Win32::Storage::FileSystem::{
+    GetDiskFreeSpaceExW, GetDriveTypeW, GetLogicalDrives,
 };
-use windows_sys::Win32::System::Com::CoTaskMemFree;
-use windows_sys::Win32::System::SystemInformation::GetLocalTime;
-use windows_sys::Win32::UI::Shell::{FOLDERID_Desktop, SHGetKnownFolderPath};
+use windows::Win32::System::Com::CoTaskMemFree;
+use windows::Win32::System::SystemInformation::GetLocalTime;
+use windows::Win32::UI::Shell::{FOLDERID_Desktop, SHGetKnownFolderPath, KNOWN_FOLDER_FLAG};
 use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
 use winreg::RegKey;
 
@@ -264,7 +264,7 @@ fn fixed_drives() -> Vec<String> {
             .encode_utf16()
             .chain(std::iter::once(0))
             .collect();
-        if unsafe { GetDriveTypeW(root.as_ptr()) } == DRIVE_FIXED {
+        if unsafe { GetDriveTypeW(windows::core::PCWSTR(root.as_ptr())) } == DRIVE_FIXED {
             v.push(format!("{}:", letter));
         }
     }
@@ -280,7 +280,12 @@ fn disk_space(drive: &str) -> (f64, f64) {
     let mut total = 0u64;
     let mut free = 0u64;
     unsafe {
-        GetDiskFreeSpaceExW(root.as_ptr(), &mut avail, &mut total, &mut free);
+        let _ = GetDiskFreeSpaceExW(
+            windows::core::PCWSTR(root.as_ptr()),
+            Some(&mut avail),
+            Some(&mut total),
+            Some(&mut free),
+        );
     }
     (round1(total as f64 / GB), round1(free as f64 / GB))
 }
@@ -348,8 +353,7 @@ fn os_version() -> String {
 }
 
 fn local_time() -> (String, String) {
-    let mut st: SYSTEMTIME = unsafe { std::mem::zeroed() };
-    unsafe { GetLocalTime(&mut st) };
+    let st: SYSTEMTIME = unsafe { GetLocalTime() };
     (
         format!(
             "{:04}-{:02}-{:02} {:02}:{:02}",
@@ -364,17 +368,16 @@ fn local_time() -> (String, String) {
 
 fn desktop_dir() -> PathBuf {
     unsafe {
-        let mut psz: *mut u16 = std::ptr::null_mut();
-        if SHGetKnownFolderPath(&FOLDERID_Desktop, 0, std::ptr::null_mut(), &mut psz) == 0
-            && !psz.is_null()
-        {
-            let mut len = 0usize;
-            while *psz.add(len) != 0 {
-                len += 1;
+        if let Ok(psz) = SHGetKnownFolderPath(&FOLDERID_Desktop, KNOWN_FOLDER_FLAG(0), None) {
+            if !psz.is_null() {
+                let mut len = 0usize;
+                while *psz.0.add(len) != 0 {
+                    len += 1;
+                }
+                let s = String::from_utf16_lossy(std::slice::from_raw_parts(psz.0, len));
+                CoTaskMemFree(Some(psz.0 as *const _));
+                return PathBuf::from(s);
             }
-            let s = String::from_utf16_lossy(std::slice::from_raw_parts(psz, len));
-            CoTaskMemFree(psz as *const _);
-            return PathBuf::from(s);
         }
     }
     PathBuf::from(std::env::var("USERPROFILE").unwrap_or_default()).join("Desktop")

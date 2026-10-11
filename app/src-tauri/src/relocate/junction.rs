@@ -35,17 +35,17 @@ pub fn remove_junction(link_path: &Path) -> Result<(), String> {
 /// 设计文档 §7 R1 / §10.3：统一用 FILE_ATTRIBUTE_REPARSE_POINT，
 /// 禁止跨语言类推 is_symlink 语义（Rust 对 junction 返回 true，Python 返回 false）。
 pub fn is_junction(path: &Path) -> bool {
-    use windows_sys::Win32::Storage::FileSystem::{
+    use windows::Win32::Storage::FileSystem::{
         GetFileAttributesW, FILE_ATTRIBUTE_REPARSE_POINT, INVALID_FILE_ATTRIBUTES,
     };
 
     let wide: Vec<u16> = path.to_string_lossy().encode_utf16().chain(std::iter::once(0)).collect();
     unsafe {
-        let attrs = GetFileAttributesW(wide.as_ptr());
+        let attrs = GetFileAttributesW(windows::core::PCWSTR(wide.as_ptr()));
         if attrs == INVALID_FILE_ATTRIBUTES {
             return false;
         }
-        (attrs & FILE_ATTRIBUTE_REPARSE_POINT) != 0
+        (attrs & FILE_ATTRIBUTE_REPARSE_POINT.0) != 0
     }
 }
 

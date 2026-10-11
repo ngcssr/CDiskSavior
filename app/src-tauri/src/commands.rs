@@ -309,10 +309,10 @@ pub fn get_system_info() -> Result<serde_json::Value, String> {
     let mut mem_total = 0u64;
     let mut mem_avail = 0u64;
     unsafe {
-        let mut stat: windows_sys::Win32::System::SystemInformation::MEMORYSTATUSEX =
+        let mut stat: windows::Win32::System::SystemInformation::MEMORYSTATUSEX =
             std::mem::zeroed();
         stat.dwLength = std::mem::size_of_val(&stat) as u32;
-        if windows_sys::Win32::System::SystemInformation::GlobalMemoryStatusEx(&mut stat) != 0 {
+        if windows::Win32::System::SystemInformation::GlobalMemoryStatusEx(&mut stat).is_ok() {
             mem_total = stat.ullTotalPhys;
             mem_avail = stat.ullAvailPhys;
         }
@@ -384,11 +384,12 @@ pub fn get_physical_size(path: String) -> Result<u64, String> {
     let wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
     let mut high = 0u32;
     let low = unsafe {
-        windows_sys::Win32::Storage::FileSystem::GetCompressedFileSizeW(wide.as_ptr(), &mut high)
+        windows::Win32::Storage::FileSystem::GetCompressedFileSizeW(
+            windows::core::PCWSTR(wide.as_ptr()), Some(&mut high))
     };
     if low == u32::MAX {
-        let err = unsafe { windows_sys::Win32::Foundation::GetLastError() };
-        if err != 0 {
+        let err = unsafe { windows::Win32::Foundation::GetLastError() };
+        if err.0 != 0 {
             // 回退：逻辑大小
             return std::fs::metadata(&path)
                 .map(|m| m.len())
@@ -893,12 +894,12 @@ pub fn open_file(path: String) -> Result<(), String> {
 // M8 额外命令
 #[tauri::command]
 pub fn check_admin_privilege() -> bool {
-    use windows_sys::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
-    use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+    use windows::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
+    use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
     unsafe {
-        let mut token = std::ptr::null_mut();
-        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+        let mut token = windows::Win32::Foundation::HANDLE::default();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token).is_err() {
             return false;
         }
         let mut elevation = TOKEN_ELEVATION { TokenIsElevated: 0 };
@@ -906,12 +907,12 @@ pub fn check_admin_privilege() -> bool {
         let result = GetTokenInformation(
             token,
             TokenElevation,
-            &mut elevation as *mut _ as *mut _,
+            Some(&mut elevation as *mut _ as *mut _),
             std::mem::size_of::<TOKEN_ELEVATION>() as u32,
             &mut ret_len,
         );
-        windows_sys::Win32::Foundation::CloseHandle(token);
-        result != 0 && elevation.TokenIsElevated != 0
+        let _ = windows::Win32::Foundation::CloseHandle(token);
+        result.is_ok() && elevation.TokenIsElevated != 0
     }
 }
 

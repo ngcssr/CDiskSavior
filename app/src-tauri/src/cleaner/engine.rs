@@ -41,16 +41,16 @@ fn protected_prefixes() -> Vec<PathBuf> {
 
 /// 检查路径是否为 reparse point（V6：用属性位，不用 is_symlink）
 pub fn is_reparse_point(path: &Path) -> bool {
-    use windows_sys::Win32::Storage::FileSystem::{
+    use windows::Win32::Storage::FileSystem::{
         GetFileAttributesW, FILE_ATTRIBUTE_REPARSE_POINT, INVALID_FILE_ATTRIBUTES,
     };
     let wide: Vec<u16> = path.to_string_lossy().encode_utf16().chain(std::iter::once(0)).collect();
     unsafe {
-        let attrs = GetFileAttributesW(wide.as_ptr());
+        let attrs = GetFileAttributesW(windows::core::PCWSTR(wide.as_ptr()));
         if attrs == INVALID_FILE_ATTRIBUTES {
             return false;
         }
-        (attrs & FILE_ATTRIBUTE_REPARSE_POINT) != 0
+        (attrs & FILE_ATTRIBUTE_REPARSE_POINT.0) != 0
     }
 }
 

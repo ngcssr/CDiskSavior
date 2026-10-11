@@ -10,12 +10,68 @@ pub struct LockingProcess {
     pub path: Option<String>,
 }
 
-pub fn check_locking_processes(_path: &std::path::Path) -> Vec<LockingProcess> {
-    // P2 骨架：Restart Manager API 签名因 windows-sys 版本差异不兼容。
-    // 9 个实证场景不依赖 RM（它们测试空间预检/Junction创建/取消/回滚/原子性/长路径）。
-    // 迁移引擎靠 rename 失败重试 + 用户手动选 PID 终止来兜底。
-    // TODO P5: 换用 windows crate 0.61（非 windows-sys）或直接 FFI 正确调用 RmRegisterResources。
-    Vec::new()
+/// C2 定案：Restart Manager 真实占用检测（windows crate 0.62 签名已兼容）。
+///
+/// 对单个路径启动 RM 会话 → 注册为文件资源 → 枚举占用进程。
+/// 返回空 Vec 表示无占用或 RM 调用失败（失败时由 rename 重试 + 用户手选 PID 兜底，与 P2 策略一致）。
+pub fn check_locking_processes(path: &std::path::Path) -> Vec<LockingProcess> {
+    use windows::Win32::System::RestartManager::{
+        RmEndSession, RmGetList, RmRegisterResources, RmStartSession, RM_PROCESS_INFO,
+    };
+
+    let mut out = Vec::new();
+    unsafe {
+        // 会话 key：32 个 u16 的 GUID 形式（无需真实 GUID，唯一即可）
+        let mut key = [0u16; 32];
+        let key_str = format!("{:08x}-{:04x}-cds1", std::process::id(), path.to_string_lossy().len());
+        for (i, u) in key_str.encode_utf16().take(31).enumerate() {
+            key[i] = u;
+        }
+        let mut session = 0u32;
+        if RmStartSession(&mut session, None, windows::core::PWSTR(key.as_mut_ptr())).0 != 0 {
+            return out;
+        }
+
+        let wide: Vec<u16> = path.to_string_lossy().encode_utf16().chain(std::iter::once(0)).collect();
+        let files = [windows::core::PCWSTR(wide.as_ptr())];
+        if RmRegisterResources(session, Some(&files), None, None).0 != 0 {
+            RmEndSession(session);
+            return out;
+        }
+
+        // 第一次调用取所需缓冲数量
+        let mut needed = 0u32;
+        let mut count = 0u32;
+        let mut reason = 0u32;
+        let rc = RmGetList(session, &mut needed, &mut count, None, &mut reason);
+        if rc.0 != 0 || needed == 0 {
+            RmEndSession(session);
+            return out;
+        }
+
+        let mut infos: Vec<RM_PROCESS_INFO> = vec![RM_PROCESS_INFO::default(); needed as usize];
+        count = needed;
+        let rc = RmGetList(session, &mut needed, &mut count, Some(infos.as_mut_ptr()), &mut reason);
+        if rc.0 == 0 {
+            for info in infos.iter().take(count as usize) {
+                let name = String::from_utf16_lossy(&info.strAppName)
+                    .trim_end_matches('\0')
+                    .to_string();
+                let pid = info.Process.dwProcessId;
+                out.push(LockingProcess {
+                    pid,
+                    path: get_process_path(pid),
+                    name: if name.is_empty() {
+                        get_process_name(pid).unwrap_or_else(|| format!("PID {}", pid))
+                    } else {
+                        name
+                    },
+                });
+            }
+        }
+        RmEndSession(session);
+    }
+    out
 }
 
 pub fn check_dir_locking(path: &std::path::Path) -> Vec<LockingProcess> {
@@ -44,17 +100,15 @@ pub fn check_dir_locking(path: &std::path::Path) -> Vec<LockingProcess> {
     all_processes
 }
 
-#[allow(dead_code)] // P9: RM 接入后使用
 fn get_process_path(pid: u32) -> Option<String> {
-    use windows_sys::Win32::System::Threading::*;
+    use windows::Win32::System::Threading::*;
     unsafe {
-        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-        if handle.is_null() { return None; }
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
         let mut buf = [0u16; 1024];
         let mut len = buf.len() as u32;
-        let result = QueryFullProcessImageNameW(handle, 0, buf.as_mut_ptr(), &mut len);
-        windows_sys::Win32::Foundation::CloseHandle(handle);
-        if result != 0 {
+        let result = QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, windows::core::PWSTR(buf.as_mut_ptr()), &mut len);
+        let _ = windows::Win32::Foundation::CloseHandle(handle);
+        if result.is_ok() {
             Some(String::from_utf16_lossy(&buf[..len as usize]).to_string())
         } else {
             None
@@ -81,15 +135,13 @@ pub fn kill_process(pid: u32, name: &str) -> Result<(), String> {
         return Err("拒绝终止当前进程".into());
     }
 
-    use windows_sys::Win32::System::Threading::*;
+    use windows::Win32::System::Threading::*;
     unsafe {
-        let handle = OpenProcess(PROCESS_TERMINATE, 0, pid);
-        if handle.is_null() {
-            return Err(format!("无法打开进程 {} (可能权限不足)", pid));
-        }
+        let handle = OpenProcess(PROCESS_TERMINATE, false, pid)
+            .map_err(|_| format!("无法打开进程 {} (可能权限不足)", pid))?;
         let result = TerminateProcess(handle, 1);
-        windows_sys::Win32::Foundation::CloseHandle(handle);
-        if result == 0 {
+        let _ = windows::Win32::Foundation::CloseHandle(handle);
+        if result.is_err() {
             return Err(format!("终止进程 {} 失败", pid));
         }
     }
@@ -97,27 +149,24 @@ pub fn kill_process(pid: u32, name: &str) -> Result<(), String> {
 }
 
 pub fn get_process_name(pid: u32) -> Option<String> {
-    use windows_sys::Win32::System::Diagnostics::ToolHelp::*;
+    use windows::Win32::System::Diagnostics::ToolHelp::*;
     unsafe {
-        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-        if snapshot == windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
-            return None;
-        }
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).ok()?;
         let mut entry: PROCESSENTRY32W = std::mem::zeroed();
         entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
 
-        if Process32FirstW(snapshot, &mut entry) != 0 {
+        if Process32FirstW(snapshot, &mut entry).is_ok() {
             loop {
                 if entry.th32ProcessID == pid {
                     let name = String::from_utf16_lossy(&entry.szExeFile)
                         .trim_end_matches('\0').to_string();
-                    windows_sys::Win32::Foundation::CloseHandle(snapshot);
+                    let _ = windows::Win32::Foundation::CloseHandle(snapshot);
                     return Some(name);
                 }
-                if Process32NextW(snapshot, &mut entry) == 0 { break; }
+                if Process32NextW(snapshot, &mut entry).is_err() { break; }
             }
         }
-        windows_sys::Win32::Foundation::CloseHandle(snapshot);
+        let _ = windows::Win32::Foundation::CloseHandle(snapshot);
         None
     }
 }

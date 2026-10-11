@@ -28,64 +28,63 @@ const PROGRESS_INTERVAL: Duration = Duration::from_millis(200);
 /// 创建一个管道实例并阻塞等待客户端连接。
 /// SDDL 允许 SYSTEM/管理员完全控制、已认证用户读写（普通权限主程序要能连上）。
 fn wait_for_client() -> Result<File, String> {
-    use windows_sys::Win32::Foundation::{GetLastError, INVALID_HANDLE_VALUE};
-    use windows_sys::Win32::Security::Authorization::ConvertStringSecurityDescriptorToSecurityDescriptorW;
-    use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
-    use windows_sys::Win32::System::Pipes::{
+    use windows::Win32::Foundation::{GetLastError, ERROR_PIPE_CONNECTED};
+    use windows::Win32::Security::Authorization::ConvertStringSecurityDescriptorToSecurityDescriptorW;
+    use windows::Win32::Security::{SECURITY_ATTRIBUTES, PSECURITY_DESCRIPTOR};
+    use windows::Win32::System::Pipes::{
         ConnectNamedPipe, CreateNamedPipeW, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS,
         PIPE_TYPE_BYTE, PIPE_WAIT,
     };
-    use windows_sys::Win32::Storage::FileSystem::PIPE_ACCESS_DUPLEX;
+    use windows::Win32::Storage::FileSystem::PIPE_ACCESS_DUPLEX;
 
     const SDDL: &str = "D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;AU)";
     const SDDL_REVISION_1: u32 = 1;
-    const ERROR_PIPE_CONNECTED: u32 = 535;
 
     let sddl_w: Vec<u16> = SDDL.encode_utf16().chain(std::iter::once(0)).collect();
     let pipe_w: Vec<u16> = PIPE_NAME.encode_utf16().chain(std::iter::once(0)).collect();
 
     unsafe {
-        let mut sd = std::ptr::null_mut();
+        let mut sd = PSECURITY_DESCRIPTOR::default();
         if ConvertStringSecurityDescriptorToSecurityDescriptorW(
-            sddl_w.as_ptr(),
+            windows::core::PCWSTR(sddl_w.as_ptr()),
             SDDL_REVISION_1,
             &mut sd,
-            std::ptr::null_mut(),
-        ) == 0
+            None,
+        ).is_err()
         {
-            return Err(format!("构建管道安全描述符失败：{}", GetLastError()));
+            return Err(format!("构建管道安全描述符失败：{}", GetLastError().0));
         }
         // sd 由 LocalAlloc 分配；服务生命周期内每个实例一次、量极小，不主动释放
         let sa = SECURITY_ATTRIBUTES {
             nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
-            lpSecurityDescriptor: sd,
-            bInheritHandle: 0,
+            lpSecurityDescriptor: sd.0,
+            bInheritHandle: false.into(),
         };
 
         let handle = CreateNamedPipeW(
-            pipe_w.as_ptr(),
+            windows::core::PCWSTR(pipe_w.as_ptr()),
             PIPE_ACCESS_DUPLEX,
             PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
             1,          // 单实例：一次只服务一个扫描
             64 * 1024,  // 出方向缓冲
             4 * 1024,   // 入方向缓冲
             0,
-            &sa,
+            Some(&sa),
         );
-        if handle == INVALID_HANDLE_VALUE {
-            return Err(format!("创建命名管道失败：{}", GetLastError()));
+        if handle.is_invalid() {
+            return Err(format!("创建命名管道失败：{}", GetLastError().0));
         }
 
         // 阻塞等待客户端；ERROR_PIPE_CONNECTED 表示客户端已抢先连上，同样算成功
-        if ConnectNamedPipe(handle, std::ptr::null_mut()) == 0 {
+        if ConnectNamedPipe(handle, None).is_err() {
             let err = GetLastError();
             if err != ERROR_PIPE_CONNECTED {
-                windows_sys::Win32::Foundation::CloseHandle(handle);
-                return Err(format!("等待客户端连接失败：{}", err));
+                let _ = windows::Win32::Foundation::CloseHandle(handle);
+                return Err(format!("等待客户端连接失败：{}", err.0));
             }
         }
         // 交给 File 接管句柄（drop 时自动断开并关闭）
-        Ok(File::from_raw_handle(handle as _))
+        Ok(File::from_raw_handle(handle.0 as _))
     }
 }
 

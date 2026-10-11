@@ -67,7 +67,7 @@ pub struct DriveInfo {
 
 /// 枚举所有驱动器（真实 Windows API）
 pub fn get_drives() -> Vec<DriveInfo> {
-    use windows_sys::Win32::Storage::FileSystem::{
+    use windows::Win32::Storage::FileSystem::{
         GetDiskFreeSpaceExW, GetDriveTypeW, GetLogicalDriveStringsW, GetVolumeInformationW,
     };
 
@@ -76,7 +76,7 @@ pub fn get_drives() -> Vec<DriveInfo> {
     unsafe {
         // 获取驱动器字符串列表（如 "C:\\\0D:\\\0\0"）
         let mut buf = [0u16; 256];
-        let len = GetLogicalDriveStringsW(buf.len() as u32, buf.as_mut_ptr());
+        let len = GetLogicalDriveStringsW(Some(&mut buf));
         if len == 0 {
             return drives;
         }
@@ -88,7 +88,7 @@ pub fn get_drives() -> Vec<DriveInfo> {
             }
 
             let wide: Vec<u16> = drive_str.encode_utf16().chain(std::iter::once(0)).collect();
-            let dt = GetDriveTypeW(wide.as_ptr());
+            let dt = GetDriveTypeW(windows::core::PCWSTR(wide.as_ptr()));
 
             let kind = match dt {
                 2 => "removable",
@@ -108,7 +108,12 @@ pub fn get_drives() -> Vec<DriveInfo> {
             let mut free: u64 = 0;
             let mut total: u64 = 0;
             let mut total_free: u64 = 0;
-            let _ = GetDiskFreeSpaceExW(wide.as_ptr(), &mut free, &mut total, &mut total_free);
+            let _ = GetDiskFreeSpaceExW(
+                windows::core::PCWSTR(wide.as_ptr()),
+                Some(&mut free),
+                Some(&mut total),
+                Some(&mut total_free),
+            );
 
             // 获取卷标和文件系统
             let mut label_buf = [0u16; 256];
@@ -117,14 +122,12 @@ pub fn get_drives() -> Vec<DriveInfo> {
             let mut max_len = 0u32;
             let mut flags = 0u32;
             let _ = GetVolumeInformationW(
-                wide.as_ptr(),
-                label_buf.as_mut_ptr(),
-                label_buf.len() as u32,
-                &mut serial,
-                &mut max_len,
-                &mut flags,
-                fs_buf.as_mut_ptr(),
-                fs_buf.len() as u32,
+                windows::core::PCWSTR(wide.as_ptr()),
+                Some(&mut label_buf),
+                Some(&mut serial),
+                Some(&mut max_len),
+                Some(&mut flags),
+                Some(&mut fs_buf),
             );
 
             let label = String::from_utf16_lossy(&label_buf)
@@ -281,7 +284,7 @@ fn dir_size(path: &std::path::Path) -> u64 {
 
 /// 内存报告（简化版：用 sysinfo 风格的 Windows API）
 pub fn memory_report() -> serde_json::Value {
-    use windows_sys::Win32::System::SystemInformation::*;
+    use windows::Win32::System::SystemInformation::*;
 
     unsafe {
         let mut meminfo: MEMORYSTATUSEX = std::mem::zeroed();

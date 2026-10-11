@@ -72,7 +72,7 @@ pub fn read_json_self_heal<T: serde::de::DeserializeOwned>(
 
 /// 命名互斥体句柄（Drop 时自动释放）
 pub struct SingleInstance {
-    _handle: windows_sys::Win32::Foundation::HANDLE,
+    _handle: windows::Win32::Foundation::HANDLE,
 }
 
 impl SingleInstance {
@@ -83,22 +83,22 @@ impl SingleInstance {
 
     /// 带名字的获取（测试用独立名称，避免与正在运行的应用互相干扰）
     fn with_name(name: &str) -> Result<Self, bool> {
-        use windows_sys::Win32::System::Threading::CreateMutexW;
-        use windows_sys::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
-        use windows_sys::Win32::Foundation::{HANDLE, INVALID_HANDLE_VALUE};
+        use windows::Win32::System::Threading::CreateMutexW;
+        use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
+        use windows::Win32::Foundation::CloseHandle;
 
         let wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
 
         unsafe {
-            let handle = CreateMutexW(std::ptr::null(), 0, wide.as_ptr());
-            if handle == INVALID_HANDLE_VALUE {
-                return Err(true); // 创建失败按已有实例处理（保守）
-            }
+            let handle = match CreateMutexW(None, false, windows::core::PCWSTR(wide.as_ptr())) {
+                Ok(h) => h,
+                Err(_) => return Err(true), // 创建失败按已有实例处理（保守）
+            };
             if GetLastError() == ERROR_ALREADY_EXISTS {
-                windows_sys::Win32::Foundation::CloseHandle(handle);
+                let _ = CloseHandle(handle);
                 return Err(false); // 已有实例
             }
-            Ok(SingleInstance { _handle: handle as HANDLE })
+            Ok(SingleInstance { _handle: handle })
         }
     }
 }
@@ -106,7 +106,7 @@ impl SingleInstance {
 impl Drop for SingleInstance {
     fn drop(&mut self) {
         unsafe {
-            windows_sys::Win32::Foundation::CloseHandle(self._handle);
+            let _ = windows::Win32::Foundation::CloseHandle(self._handle);
         }
     }
 }

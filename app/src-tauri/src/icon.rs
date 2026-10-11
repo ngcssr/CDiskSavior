@@ -25,38 +25,37 @@ pub fn base64(data: &[u8]) -> String {
 /// 用 GDI 从文件（exe/ico/lnk）抠出图标位图并编码为 PNG。失败返回 None。
 fn extract_png(path: &str) -> Option<Vec<u8>> {
     use image::ImageEncoder;
-    use windows_sys::Win32::Foundation::HWND;
-    use windows_sys::Win32::Graphics::Gdi::{
+    use windows::Win32::Graphics::Gdi::{
         DeleteObject, GetDC, GetDIBits, GetObjectW, ReleaseDC, BITMAP, BITMAPINFO,
         BITMAPINFOHEADER, DIB_RGB_COLORS,
     };
-    use windows_sys::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON};
-    use windows_sys::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, ICONINFO};
+    use windows::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON};
+    use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, ICONINFO};
 
     let wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
     unsafe {
         let mut shfi: SHFILEINFOW = std::mem::zeroed();
         let r = SHGetFileInfoW(
-            wide.as_ptr(),
-            0,
-            &mut shfi,
+            windows::core::PCWSTR(wide.as_ptr()),
+            windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES(0),
+            Some(&mut shfi),
             std::mem::size_of::<SHFILEINFOW>() as u32,
             SHGFI_ICON | SHGFI_LARGEICON,
         );
-        if r == 0 || shfi.hIcon.is_null() {
+        if r == 0 || shfi.hIcon.is_invalid() {
             return None;
         }
         let hicon = shfi.hIcon;
         let mut ii: ICONINFO = std::mem::zeroed();
-        if GetIconInfo(hicon, &mut ii) == 0 {
-            DestroyIcon(hicon);
+        if GetIconInfo(hicon, &mut ii).is_err() {
+            let _ = DestroyIcon(hicon);
             return None;
         }
         let mut bm: BITMAP = std::mem::zeroed();
         let ok = GetObjectW(
-            ii.hbmColor as _,
+            windows::Win32::Graphics::Gdi::HGDIOBJ(ii.hbmColor.0),
             std::mem::size_of::<BITMAP>() as i32,
-            &mut bm as *mut _ as *mut _,
+            Some(&mut bm as *mut _ as *mut _),
         );
         let (w, h) = (bm.bmWidth, bm.bmHeight);
         let mut result = None;
@@ -69,9 +68,9 @@ fn extract_png(path: &str) -> Option<Vec<u8>> {
             bmi.bmiHeader.biBitCount = 32;
             bmi.bmiHeader.biCompression = 0; // BI_RGB
             let mut buf = vec![0u8; (w * h * 4) as usize];
-            let hdc = GetDC(std::ptr::null_mut::<core::ffi::c_void>() as HWND);
-            let got = GetDIBits(hdc, ii.hbmColor, 0, h as u32, buf.as_mut_ptr() as *mut _, &mut bmi, DIB_RGB_COLORS);
-            ReleaseDC(std::ptr::null_mut::<core::ffi::c_void>() as HWND, hdc);
+            let hdc = GetDC(None);
+            let got = GetDIBits(hdc, ii.hbmColor, 0, h as u32, Some(buf.as_mut_ptr() as *mut _), &mut bmi, DIB_RGB_COLORS);
+            ReleaseDC(None, hdc);
             if got != 0 {
                 let any_alpha = buf.chunks_exact(4).any(|p| p[3] != 0);
                 for p in buf.chunks_exact_mut(4) {
@@ -90,9 +89,9 @@ fn extract_png(path: &str) -> Option<Vec<u8>> {
                 }
             }
         }
-        DeleteObject(ii.hbmColor as _);
-        DeleteObject(ii.hbmMask as _);
-        DestroyIcon(hicon);
+        let _ = DeleteObject(windows::Win32::Graphics::Gdi::HGDIOBJ(ii.hbmColor.0));
+        let _ = DeleteObject(windows::Win32::Graphics::Gdi::HGDIOBJ(ii.hbmMask.0));
+        let _ = DestroyIcon(hicon);
         result
     }
 }
