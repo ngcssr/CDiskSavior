@@ -55,6 +55,7 @@ windows = { version = "0.62", features = [                  # Win32 绑定统一
     "Win32_System_SystemInformation",
     "Win32_System_Pipes",
     "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_Diagnostics_Debug",
     "Win32_Graphics_Gdi",
     "Win32_UI_WindowsAndMessaging",
 ] }
@@ -69,4 +70,10 @@ indexmap = { version = "1", features = ["std"] }
 custom-protocol = ["tauri/custom-protocol"]
 
 [profile.release]
-opt-level = 1
+# C 级防逆向加固：满优化 + 全量 LTO + 单代码生成单元（内联最大化、符号布局随机化）
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = "symbols"      # 剥离符号表与调试信息（函数名/路径不进二进制）
+debug = false
+panic = "unwind"       # tauri 运行时依赖 unwind，不可改 abort

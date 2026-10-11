@@ -6,4 +6,11 @@ fn main() {
         .app_manifest(include_str!("cdisksavior.manifest"));
     let attrs = tauri_build::Attributes::new().windows_attributes(windows);
     tauri_build::try_build(attrs).expect("tauri build failed");
+
+    // C 级防逆向：PE 缓解（CFG 控制流防护；msvc 链接器）
+    if std::env::var_os("CARGO_CFG_WINDOWS").is_some() {
+        println!("cargo:rustc-link-arg=/GUARD:CF");
+        // 移除 CodeView 调试目录（strip=symbols 后仍会残留 pdb 文件名引用）
+        println!("cargo:rustc-link-arg=/DEBUG:NONE");
+    }
 }
