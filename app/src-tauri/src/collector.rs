@@ -3,7 +3,7 @@
 //! 只采集目录名+大小+缓存模式命中+软件清单，永不采集文件名/文件内容/用户名（路径脱敏）。
 //! 零网络、不删除不修改任何东西。报告写到桌面，由用户自主决定是否分享。
 //!
-//! 移植差异：去掉内置 MFT 扫描服务路径（CDiskSaviorSvc 未实现），
+//! 移植差异：完整采集（collect_rules）保持 jwalk 遍历；秒扫走 scan_drive 的 CDiskSaviorSvc 快路径（C1 已实现）。
 //! include_drives=true 时直接走 jwalk 慢速遍历；报告文件名品牌改为 cdisksavior。
 
 use serde::Serialize;
@@ -431,7 +431,7 @@ pub fn collect(include_drives: bool) -> Result<CollectResult, String> {
         }
     }
 
-    // 完整模式：jwalk 全盘遍历（MFT 服务未实现，无快速路径）
+    // 完整模式：jwalk 全盘遍历（采集报告为低频操作；MFT 快路径保留给 scan_drive）
     let drive_rows = if include_drives {
         scan_drives(&profile, &user)
     } else {

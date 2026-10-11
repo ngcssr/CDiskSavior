@@ -154,7 +154,7 @@ pub fn get_drives() -> Vec<DriveInfo> {
 /// 扫描目录树（jwalk 并行遍历）
 ///
 /// 返回剪枝后的 TreeNode（只保留目录层 + 一级子项的大小汇总）。
-/// 设计文档 §6 C6：P3 用 jwalk 慢速路径（MFT 引擎 P8 后接入）。
+/// 设计文档 §6 C6：jwalk 慢速路径兜底（MFT 快路径在 scan_drive 命令层分流）。
 pub fn scan_directory(root: &str) -> Result<TreeNode, String> {
     let root_path = std::path::Path::new(root);
     if !root_path.exists() {
