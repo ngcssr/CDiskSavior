@@ -173,6 +173,14 @@ export default function Insight() {
   const [tree, setTree] = useState<TreeNode | null>(null);
   const [selected, setSelected] = useState<TreeNode | null>(null);
   const [stack, setStack] = useState<TreeNode[]>([]); // 面包屑路径
+  const [elevated, setElevated] = useState<boolean | null>(null); // null=检测中
+
+  // 提权检测：未提权时 MFT 秒级路径全部不可用（热点/大文件/增长回退 fs 慢路径）
+  useEffect(() => {
+    import("../api/commands").then(({ api_settings }) => {
+      api_settings.check_admin_privilege().then(setElevated).catch(() => setElevated(null));
+    });
+  }, []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"tree" | "hotspot" | "growth" | "bigfile">("tree");
@@ -351,6 +359,17 @@ export default function Insight() {
           ))}
         </div>
       </div>
+
+      {/* 未提权警示：MFT 秒级路径全部不可用 */}
+      {elevated === false && (
+        <div className="flex items-center gap-2 border-b border-[var(--color-warning,#d97706)]/30 bg-[var(--color-warning,#d97706)]/10 px-4 py-2 text-sm text-[var(--color-warning,#b45309)]">
+          <FileWarning size={15} className="shrink-0" />
+          <span>
+            当前未以管理员身份运行——热点 / 大文件 / 增长已回退到慢速扫描（分钟级）。
+            请关闭应用后<b>右键 → 以管理员身份运行</b>。
+          </span>
+        </div>
+      )}
 
       {/* 内容区 */}
       <div className="flex-1 overflow-y-auto p-4">

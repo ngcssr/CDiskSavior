@@ -1,10 +1,10 @@
 {
-  "scannedAt": 1791702159,
+  "scannedAt": 1791709346,
   "root": "C:\\",
   "tree": {
     "name": "C:\\",
     "path": "C:\\",
-    "size": 115023058162,
+    "size": 115367249012,
     "isDir": true,
     "hasChildren": true,
     "category": "unknown",
@@ -15,7 +15,7 @@
       {
         "name": "Users",
         "path": "C:\\Users",
-        "size": 41502362626,
+        "size": 41966021960,
         "isDir": true,
         "hasChildren": true,
         "category": "unknown",
@@ -26,7 +26,7 @@
           {
             "name": "Administrator",
             "path": "C:\\Users\\Administrator",
-            "size": 40878361770,
+            "size": 41342021104,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -76,7 +76,7 @@
       {
         "name": "Windows",
         "path": "C:\\Windows",
-        "size": 28097867670,
+        "size": 28035678303,
         "isDir": true,
         "hasChildren": true,
         "category": "unknown",
@@ -99,7 +99,7 @@
           {
             "name": "System32",
             "path": "C:\\Windows\\System32",
-            "size": 7122641054,
+            "size": 7125546388,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -289,18 +289,6 @@
             "children": []
           },
           {
-            "name": "Logs",
-            "path": "C:\\Windows\\Logs",
-            "size": 59381781,
-            "isDir": true,
-            "hasChildren": false,
-            "category": "unknown",
-            "friendlyName": null,
-            "description": null,
-            "safety": "unknown",
-            "children": []
-          },
-          {
             "name": "Globalization",
             "path": "C:\\Windows\\Globalization",
             "size": 49388467,
@@ -315,7 +303,7 @@
           {
             "name": "SoftwareDistribution",
             "path": "C:\\Windows\\SoftwareDistribution",
-            "size": 42440391,
+            "size": 41217311,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -436,18 +424,6 @@
             "name": "PolicyDefinitions",
             "path": "C:\\Windows\\PolicyDefinitions",
             "size": 6602136,
-            "isDir": true,
-            "hasChildren": false,
-            "category": "unknown",
-            "friendlyName": null,
-            "description": null,
-            "safety": "unknown",
-            "children": []
-          },
-          {
-            "name": "Prefetch",
-            "path": "C:\\Windows\\Prefetch",
-            "size": 6601349,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -613,6 +589,18 @@
             "children": []
           },
           {
+            "name": "Prefetch",
+            "path": "C:\\Windows\\Prefetch",
+            "size": 1489719,
+            "isDir": true,
+            "hasChildren": false,
+            "category": "unknown",
+            "friendlyName": null,
+            "description": null,
+            "safety": "unknown",
+            "children": []
+          },
+          {
             "name": "PLA",
             "path": "C:\\Windows\\PLA",
             "size": 1117168,
@@ -652,6 +640,18 @@
             "name": "SystemTemp",
             "path": "C:\\Windows\\SystemTemp",
             "size": 763236,
+            "isDir": true,
+            "hasChildren": false,
+            "category": "unknown",
+            "friendlyName": null,
+            "description": null,
+            "safety": "unknown",
+            "children": []
+          },
+          {
+            "name": "Logs",
+            "path": "C:\\Windows\\Logs",
+            "size": 637247,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -829,18 +829,6 @@
             "children": []
           },
           {
-            "name": "Temp",
-            "path": "C:\\Windows\\Temp",
-            "size": 19345,
-            "isDir": true,
-            "hasChildren": false,
-            "category": "unknown",
-            "friendlyName": null,
-            "description": null,
-            "safety": "unknown",
-            "children": []
-          },
-          {
             "name": "Vss",
             "path": "C:\\Windows\\Vss",
             "size": 12420,
@@ -868,6 +856,18 @@
             "name": "ServiceState",
             "path": "C:\\Windows\\ServiceState",
             "size": 4096,
+            "isDir": true,
+            "hasChildren": false,
+            "category": "unknown",
+            "friendlyName": null,
+            "description": null,
+            "safety": "unknown",
+            "children": []
+          },
+          {
+            "name": "Temp",
+            "path": "C:\\Windows\\Temp",
+            "size": 3888,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -1157,7 +1157,7 @@
       {
         "name": "Program Files",
         "path": "C:\\Program Files",
-        "size": 23281465761,
+        "size": 23281449058,
         "isDir": true,
         "hasChildren": true,
         "category": "unknown",
@@ -1168,7 +1168,7 @@
           {
             "name": "WindowsApps",
             "path": "C:\\Program Files\\WindowsApps",
-            "size": 8961753542,
+            "size": 8961736839,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -3570,7 +3570,7 @@
       {
         "name": "Program Files (x86)",
         "path": "C:\\Program Files (x86)",
-        "size": 10490495225,
+        "size": 10490555282,
         "isDir": true,
         "hasChildren": true,
         "category": "unknown",
@@ -3629,7 +3629,7 @@
           {
             "name": "Google",
             "path": "C:\\Program Files (x86)\\Google",
-            "size": 715938374,
+            "size": 715998431,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -4891,7 +4891,7 @@
       {
         "name": "ProgramData",
         "path": "C:\\ProgramData",
-        "size": 5144773181,
+        "size": 5156976095,
         "isDir": true,
         "hasChildren": true,
         "category": "unknown",
@@ -4902,7 +4902,7 @@
           {
             "name": "Microsoft",
             "path": "C:\\ProgramData\\Microsoft",
-            "size": 2281269730,
+            "size": 2293194112,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -4998,7 +4998,7 @@
           {
             "name": "Alibaba",
             "path": "C:\\ProgramData\\Alibaba",
-            "size": 30797243,
+            "size": 30797247,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -5022,7 +5022,7 @@
           {
             "name": "USOShared",
             "path": "C:\\ProgramData\\USOShared",
-            "size": 23830528,
+            "size": 24109056,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
@@ -5721,7 +5721,7 @@
       {
         "name": "$RECYCLE.BIN",
         "path": "C:\\$RECYCLE.BIN",
-        "size": 1483234091,
+        "size": 1413708706,
         "isDir": true,
         "hasChildren": true,
         "category": "unknown",
@@ -5732,7 +5732,7 @@
           {
             "name": "S-1-5-21-876982227-1758349715-3841343856-500",
             "path": "C:\\$RECYCLE.BIN\\S-1-5-21-876982227-1758349715-3841343856-500",
-            "size": 1483233962,
+            "size": 1413708577,
             "isDir": true,
             "hasChildren": false,
             "category": "unknown",
