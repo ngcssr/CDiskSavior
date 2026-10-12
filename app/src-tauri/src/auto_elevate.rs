@@ -12,12 +12,23 @@ use std::process::Command;
 
 const TASK_NAME: &str = "CDiskSaviorElevated";
 
+/// 提权探测（注册表版）：HKLM\SAM\SAM 仅管理员可读，非提权进程
+/// 打开返回 ACCESS_DENIED。
+/// 不走 token API（OpenProcessToken/GetTokenInformation 被本机安全
+/// 软件 hook，双击场景实测触发进程级冻结 9.5s——后台线程也一样把
+/// 主线程拖下水）；注册表操作不在 hook 热点。
+fn is_elevated_reg() -> bool {
+    use winreg::enums::HKEY_LOCAL_MACHINE;
+    winreg::RegKey::predef(HKEY_LOCAL_MACHINE)
+        .open_subkey("SAM\\SAM")
+        .is_ok()
+}
+
 pub fn ensure_elevation() {
-    // 整体后台化：token API（OpenProcessToken/GetTokenInformation）在
-    // 本机可能被安全软件 hook，Explorer 双击场景实测拖慢 9.5s——
-    // 绝不能阻塞主线程启动路径。主流程调用本函数后零等待立即返回。
+    // 整体后台化 + 注册表探测：主线程调用本函数后零等待。
+    // 提权判断用 is_elevated_reg（SAM 键），绕开被 hook 的 token API。
     std::thread::spawn(|| {
-        if crate::lightc_mft::is_elevated() {
+        if is_elevated_reg() {
             // 已提权：再延迟 10s 创建计划任务（schtasks 进程启动会
             // 抢占 CPU/磁盘，避开 WebView2 初始化窗口）
             std::thread::sleep(std::time::Duration::from_secs(10));
