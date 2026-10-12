@@ -57,6 +57,25 @@ pub fn run() {
     anti_tamper::startup_guard(); // C 级防逆向：反调试守卫（release 生效）
     startup_log("after anti_tamper");
 
+    // 便携版：WebView2 profile 落 exe 旁 webview/main（LightC 同款效果）。
+    // 用 WEBVIEW2_USER_DATA_FOLDER 环境变量实现（WebView2 Loader 官方机制，
+    // 优先级低于显式参数、高于默认 %LOCALAPPDATA%）。
+    // 不改窗口创建流程——手动建窗在本机有兼容性问题（23:16 版踩坑）。
+    // profile 在 C 盘 %LOCALAPPDATA%（磁盘曾 99.5% 满读写慢）会拖慢
+    // WebView2 渲染进程初始化 → 启动白屏；落到 exe 旁即规避。
+    if appdata::portable_mode() {
+        if let Some(dir) = std::env::current_exe()
+            .ok()
+            .and_then(|e| e.parent().map(|p| p.to_path_buf()))
+            .map(|p| p.join("webview").join("main"))
+        {
+            if dir.is_absolute() && std::fs::create_dir_all(&dir).is_ok() {
+                std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", &dir);
+                startup_log("WEBVIEW2_USER_DATA_FOLDER set (portable)");
+            }
+        }
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
