@@ -106,7 +106,13 @@ impl MigrationTask {
                 continue;
             }
 
-            // 计算源大小
+            // 计算源大小（可能 10-30s——发进度事件让用户知道在干活）
+            self.emit(MigrationProgress::Progress {
+                source: source_str.clone(),
+                bytes_done: 0,
+                bytes_total: 0,
+                speed_bps: 0,
+            });
             let source_size = crate::relocate::scanner::get_dir_size(&source);
 
             // V10: 空间预检

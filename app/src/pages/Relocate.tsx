@@ -439,16 +439,28 @@ export default function Relocate() {
                 {/* 进度条 */}
                 <div>
                   <div className="mb-1 flex justify-between text-xs">
-                    <span className="truncate">{progress?.source ?? "迁移中…"}</span>
-                    <span className="tabular-nums">{progressPct.toFixed(0)}%</span>
+                    <span className="truncate">
+                      {progress?.source
+                        ? (progress.bytesTotal === 0
+                            ? `正在分析 ${progress.source}…`
+                            : progress.source)
+                        : "迁移中…"}
+                    </span>
+                    <span className="tabular-nums">
+                      {progress?.bytesTotal === 0 ? "…" : `${progressPct.toFixed(0)}%`}
+                    </span>
                   </div>
                   <div className="h-2 overflow-hidden rounded-full bg-[var(--color-surface-hover)]">
-                    <div
-                      className="h-full rounded-full bg-[var(--color-primary)] transition-all"
-                      style={{ width: `${progressPct}%` }}
-                    />
+                    {progress?.bytesTotal === 0 ? (
+                      <div className="h-full w-1/3 rounded-full bg-[var(--color-primary)] animate-pulse" />
+                    ) : (
+                      <div
+                        className="h-full rounded-full bg-[var(--color-primary)] transition-all"
+                        style={{ width: `${progressPct}%` }}
+                      />
+                    )}
                   </div>
-                  {progress?.bytesTotal && (
+                  {progress?.bytesTotal && progress.bytesTotal > 0 && (
                     <div className="mt-1 text-xs text-[var(--color-text-secondary)]">
                       {fmt(progress.bytesDone ?? 0)} / {fmt(progress.bytesTotal)}
                       {progress.speedBps ? ` · ${fmt(progress.speedBps)}/s` : ""}
