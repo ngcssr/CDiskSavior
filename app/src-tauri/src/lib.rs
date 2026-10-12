@@ -90,7 +90,14 @@ pub fn run() {
         {
             if dir.is_absolute() && std::fs::create_dir_all(&dir).is_ok() {
                 std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", &dir);
-                startup_log("WEBVIEW2_USER_DATA_FOLDER set (portable)");
+                // 禁用 HTTP 缓存：嵌入资源是权威数据源，避免 WebView2
+                // 缓存旧前端 JS 导致更新 exe 后 UI 行为不生效（实测：
+                // 后端新代码成功但前端 chunk 缓存旧版静默吞错）
+                std::env::set_var(
+                    "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+                    "--disable-http-cache",
+                );
+                startup_log("WEBVIEW2_USER_DATA_FOLDER set (portable, http-cache disabled)");
             }
         }
     }
