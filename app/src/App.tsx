@@ -8,12 +8,16 @@ import { HardDriveDownload } from "lucide-react";
 export default function App() {
   const { active, setActive, theme } = useAppStore();
 
-  // 零白屏显示：窗口 visible:false 创建，首次 commit（DOM 挂载完成）后
-  // 调 Rust 自定义命令 show——Rust 直接持有窗口对象，100% 可靠
-  // （前端 window plugin 的 show 在本机有 label 查找兼容性问题）。
-  // useEffect 不依赖 rAF，隐藏窗口中正常执行。
+  // 启动衔接：窗口默认可见，HTML 内联欢迎页（#splash）先显示；
+  // 本组件首次 commit（DOM 就绪）后等两帧（首帧绘制完成）再移除
+  // 欢迎页——从欢迎页到完整 UI 无缝切换，全程无白屏。
   useEffect(() => {
     invoke("window_ready").catch(() => {});
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        document.getElementById("splash")?.remove();
+      })
+    );
   }, []);
 
   return (
