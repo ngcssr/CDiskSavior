@@ -646,9 +646,26 @@ pub fn scan_mft<F: FnMut(u64, u64, f32, &str)>(
         }
         None => {
             let t_load = std::time::Instant::now();
-            let loaded = load_and_parse(letter, &mut progress)?;
+            // 统一走扫描锁（与 get_mft_stats ④互斥）：热点/大文件在
+            // 目录树读盘期间等待而非并发重复读盘（双份 MFT 并发读
+            // 实测互拖 24-29s）；锁内双检 raw，命中即复用先到者成果。
+            // 注意：raw 缓存写入必须在锁释放前完成（等待者拿锁后
+            // 双检才能命中），否则等待者又会重复读盘。
+            let _scan_lock =
+                crate::growth::MFT_SCAN_LOCK.lock().map_err(|_| "扫描锁中毒")?;
+            let pair = match crate::growth::get_cached_mft_raw(letter) {
+                Some(cached) => {
+                    crate::scan_log("scan_mft load: raw-cache hit (in-lock)");
+                    cached
+                }
+                None => {
+                    let loaded = load_and_parse(letter, &mut progress)?;
+                    crate::growth::take_and_cache_mft_raw(letter, loaded.0, loaded.1)
+                }
+            };
+            drop(_scan_lock);
             crate::scan_log(&format!("scan_mft load_and_parse {:?}", t_load.elapsed()));
-            crate::growth::take_and_cache_mft_raw(letter, loaded.0, loaded.1)
+            pair
         }
     };
 

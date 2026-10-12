@@ -17,7 +17,10 @@ struct MftDataCache {
     stats: crate::lightc_mft::FullDriveStats,
 }
 
-static MFT_SCAN_LOCK: Mutex<()> = Mutex::new(());
+/// 全盘 MFT 加载互斥锁：scan_mft（目录树）与 get_mft_stats（热点/
+/// 大文件/增长）共用的读盘锁——并发时后到者等待并复用先到者的
+/// raw 缓存，而不是各读各的盘（双份 MFT 并发读实测互拖 24-29s）。
+pub static MFT_SCAN_LOCK: Mutex<()> = Mutex::new(());
 static MFT_DATA_CACHE: Mutex<Option<MftDataCache>> = Mutex::new(None);
 
 const MFT_CACHE_TTL_SECS: u64 = 300;
