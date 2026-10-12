@@ -147,9 +147,19 @@ pub fn check_disk_space(target_root: &Path, source_size: u64) -> TargetRootCheck
     use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
 
     let root_str = target_root.to_string_lossy().to_string();
-    // 找到盘符根
-    let drive_root = if root_str.len() >= 2 {
-        format!("{}:\\", root_str.chars().next().unwrap_or('C'))
+    // 找到盘符：路径可能带 \\?\ 前缀（long_path 转换后），用冒号
+    // 位置取前一个字符（盘符字母），不能 chars().next()（会取到 \）
+    let drive_root = if let Some(colon_idx) = root_str.find(':') {
+        if colon_idx > 0 {
+            let drive = root_str.as_bytes()[colon_idx - 1] as char;
+            if drive.is_ascii_alphabetic() {
+                format!("{}:\\", drive)
+            } else {
+                return TargetRootCheck::Rejected("无法解析目标盘符".into());
+            }
+        } else {
+            return TargetRootCheck::Rejected("无法解析目标盘符".into());
+        }
     } else {
         return TargetRootCheck::Rejected("无法解析目标盘符".into());
     };
