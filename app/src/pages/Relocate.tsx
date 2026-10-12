@@ -260,25 +260,20 @@ export default function Relocate() {
                 <div className="font-mono text-sm text-[var(--color-primary)]">
                   {config.targetRoot ?? "未设置（点击右侧选择）"}
                 </div>
-                {targetFree !== null && config.targetRoot && (
-                  <div className="mt-1 text-xs">
-                    剩余空间：<strong className={targetFree < totalSelected ? "text-[var(--color-danger-text)]" : "text-[var(--color-safe)]"}>{fmt(targetFree)}</strong>
-                    {totalSelected > 0 && (
-                      <span className="ml-2 text-[var(--color-text-secondary)]">
-                        · 需迁移 {fmt(totalSelected)}
-                        {targetFree < totalSelected && (
-                          <span className="ml-1 text-[var(--color-danger-text)]">⚠ 空间不足</span>
-                        )}
-                      </span>
-                    )}
-                  </div>
-                )}
-                {targetFree === null && config.targetRoot && (
-                  <div className="mt-1 text-xs text-[var(--color-text-secondary)]">剩余空间：查询中…</div>
-                )}
-                {!config.targetRoot && (
-                  <div className="mt-1 text-xs text-[var(--color-caution)]">未设置目标盘——点击右侧「选择」</div>
-                )}
+                <div className="mt-1 text-xs">
+                  剩余空间：
+                  {targetFree === null
+                    ? <span className="text-[var(--color-text-secondary)]">查询中…</span>
+                    : <strong className={targetFree < totalSelected ? "text-[var(--color-danger-text)]" : "text-[var(--color-safe)]"}>{fmt(targetFree)}</strong>}
+                  {totalSelected > 0 && targetFree !== null && (
+                    <span className="ml-2 text-[var(--color-text-secondary)]">
+                      · 需迁移 {fmt(totalSelected)}
+                      {targetFree < totalSelected && (
+                        <span className="ml-1 text-[var(--color-danger-text)]">⚠ 空间不足</span>
+                      )}
+                    </span>
+                  )}
+                </div>
               </div>
               <button
                 onClick={pickTarget}
