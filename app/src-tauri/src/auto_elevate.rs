@@ -12,32 +12,27 @@ use std::process::Command;
 
 const TASK_NAME: &str = "CDiskSaviorElevated";
 
-/// 提权探测（注册表版）：HKLM\SAM\SAM 仅管理员可读，非提权进程
-/// 打开返回 ACCESS_DENIED。
-/// 不走 token API（OpenProcessToken/GetTokenInformation 被本机安全
-/// 软件 hook，双击场景实测触发进程级冻结 9.5s——后台线程也一样把
-/// 主线程拖下水）；注册表操作不在 hook 热点。
-fn is_elevated_reg() -> bool {
-    use winreg::enums::HKEY_LOCAL_MACHINE;
-    winreg::RegKey::predef(HKEY_LOCAL_MACHINE)
-        .open_subkey("SAM\\SAM")
-        .is_ok()
-}
-
+/// 提权探测：恢复 token 版（is_elevated_reg 的 SAM 键探测在本机
+/// 对提权进程也返回 false，导致误判未提权 → schtasks /run 拉新实例
+/// → 新实例同样误判 → 无限循环 = 窗口狂闪。正确性优先）。
+///
+/// token API（OpenProcessToken）被本机安全软件 hook，调用会触发
+/// 异步进程冻结扫描（实测 9.5-13s，主线程/后台线程都躲不掉——
+/// 12:18 版后台化后 React 仍被拖到 13.8s 即证据）。
+/// 对策：见 ensure_elevation 的延迟策略。
 pub fn ensure_elevation() {
-    // 整体后台化 + 注册表探测：主线程调用本函数后零等待。
-    // 提权判断用 is_elevated_reg（SAM 键），绕开被 hook 的 token API。
+    // 关键：启动路径上零 API 调用（token/schtasks 都会触发冻结扫描）。
+    // 等待 UI 完全就绪（窗口出现 ~1s + React 渲染 + 首页数据 ~3s）
+    // 后再后台执行提权检查。此时冻结扫描若发生，UI 已显示在屏，
+    // 用户最多感知短暂卡顿，而非启动白屏/狂闪。
     std::thread::spawn(|| {
-        if is_elevated_reg() {
-            // 已提权：再延迟 10s 创建计划任务（schtasks 进程启动会
-            // 抢占 CPU/磁盘，避开 WebView2 初始化窗口）
-            std::thread::sleep(std::time::Duration::from_secs(10));
+        std::thread::sleep(std::time::Duration::from_secs(12));
+        if crate::lightc_mft::is_elevated() {
+            // 已提权：维护计划任务（供 UAC 开启机器下次静默）
             ensure_task_exists();
             return;
         }
         // 未提权（UAC 开启机器）：拉起提权实例后退出当前实例。
-        // exit 前提权实例已 spawn（schtasks /run 异步），启动需数秒，
-        // 单实例互斥届时已释放，不冲突。
         if task_matches_current() {
             let _ = Command::new("schtasks")
                 .args(["/run", "/tn", TASK_NAME])
