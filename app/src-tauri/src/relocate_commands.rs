@@ -231,6 +231,22 @@ pub fn get_relocate_config(app: AppHandle) -> Result<RelocateConfig, String> {
     Ok(config::load_config(&app))
 }
 
+/// 查询目标盘剩余空间（用户可用字节数）
+#[tauri::command]
+pub fn get_target_drive_free(path: String) -> Result<u64, String> {
+    use windows::core::PCWSTR;
+    use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+    let wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut avail: u64 = 0;
+    let mut total: u64 = 0;
+    let mut free: u64 = 0;
+    unsafe {
+        GetDiskFreeSpaceExW(PCWSTR(wide.as_ptr()), Some(&mut avail), Some(&mut total), Some(&mut free))
+            .map_err(|e| format!("查询磁盘空间失败: {:?}", e))?;
+    }
+    Ok(avail)
+}
+
 /// 保存迁移配置（含 R9 校验）
 #[tauri::command]
 pub fn save_relocate_config(app: AppHandle, config_value: serde_json::Value) -> Result<(), String> {

@@ -39,6 +39,7 @@ export default function Relocate() {
   const [lockingProcs, setLockingProcs] = useState<any[]>([]);
   const [lockLoading, setLockLoading] = useState(false);
   const [killPids, setKillPids] = useState<Set<number>>(new Set());
+  const [targetFree, setTargetFree] = useState<number | null>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
 
   const addLog = (msg: string) => setLogs((l) => [...l.slice(-50), msg]);
@@ -53,6 +54,10 @@ export default function Relocate() {
         ]);
         setConfig(cfg);
         setHistory(hist);
+        // 查询目标盘剩余空间
+        if (cfg.targetRoot) {
+          try { setTargetFree(await api_relocate.get_target_drive_free(cfg.targetRoot)); } catch {}
+        }
       } catch (e: any) {
         setError(e?.message ?? String(e));
       }
@@ -116,6 +121,21 @@ export default function Relocate() {
       else next.add(path);
       return next;
     });
+  };
+
+  // 更换目标盘
+  const pickTarget = async () => {
+    try {
+      const dir = await api_settings.pick_folder_dialog("选择迁移目标盘根目录");
+      if (!dir) return;
+      const newCfg = { ...config!, targetRoot: dir };
+      setConfig(newCfg);
+      await api_relocate.save_relocate_config(newCfg);
+      try { setTargetFree(await api_relocate.get_target_drive_free(dir)); } catch {}
+      addLog(`目标盘已更换为 ${dir}`);
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    }
   };
 
   // 检查占用进程（对已选目录批量查）
@@ -222,30 +242,50 @@ export default function Relocate() {
           </div>
         )}
 
-        {/* 配置区 */}
+        {/* 步骤 1：选择目标盘 */}
         {config && (
           <section className="mb-6 rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] p-4">
+            <div className="mb-2 flex items-center gap-2">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--color-primary)] text-xs font-bold text-white">1</span>
+              <span className="text-sm font-semibold">选择目标盘</span>
+            </div>
             <div className="flex items-center justify-between">
-              <div>
-                <span className="text-sm font-semibold">迁移目标根目录</span>
-                <div className="mt-1 font-mono text-sm text-[var(--color-primary)]">
-                  {config.targetRoot ?? "未设置（首次使用时自动解析）"}
+              <div className="flex-1">
+                <div className="font-mono text-sm text-[var(--color-primary)]">
+                  {config.targetRoot ?? "未设置（点击右侧选择）"}
                 </div>
+                {targetFree !== null && config.targetRoot && (
+                  <div className="mt-1 text-xs">
+                    剩余空间：<strong className={targetFree < totalSelected ? "text-[var(--color-danger-text)]" : "text-[var(--color-safe)]"}>{fmt(targetFree)}</strong>
+                    {totalSelected > 0 && (
+                      <span className="ml-2 text-[var(--color-text-secondary)]">
+                        · 需迁移 {fmt(totalSelected)}
+                        {targetFree < totalSelected && (
+                          <span className="ml-1 text-[var(--color-danger-text)]">⚠ 空间不足</span>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
-              {config.legacyImported && (
-                <span className="rounded-full bg-[var(--color-caution)]/10 px-3 py-1 text-xs text-[var(--color-caution)]">
-                  已导入旧版数据
-                </span>
-              )}
+              <button
+                onClick={pickTarget}
+                className="flex items-center gap-1.5 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--color-surface-hover)]"
+              >
+                <FolderInput size={12} />
+                {config.targetRoot ? "更换" : "选择"}
+              </button>
             </div>
           </section>
         )}
 
-        {/* 扫描源管理（disk-butler 成品对齐：5 组预置 + 自定义源） */}
+        {/* 步骤 2：选择要迁移的目录 */}
         {config && (
           <section className="mb-6 rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <span className="text-sm font-semibold">
+            <div className="mb-2 flex items-center gap-2">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--color-primary)] text-xs font-bold text-white">2</span>
+              <span className="text-sm font-semibold">选择要迁移的目录</span>
+              <span className="ml-auto text-xs text-[var(--color-text-secondary)]">
                 扫描源（{config.scanSources.length} 个，勾选后参与扫描）
               </span>
               <div className="flex gap-2">
@@ -387,9 +427,13 @@ export default function Relocate() {
           )}
         </section>
 
-        {/* 迁移控制 */}
+        {/* 步骤 3：开始迁移 */}
         {selected.size > 0 && (
-          <section className="mb-6 rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] p-4">
+          <section className="mb-6 rounded-2xl border border-[var(--color-primary)]/30 bg-[var(--color-primary-soft)]/30 p-4">
+            <div className="mb-2 flex items-center gap-2">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--color-primary)] text-xs font-bold text-white">3</span>
+              <span className="text-sm font-semibold">开始迁移</span>
+            </div>
             {migrating ? (
               <div className="space-y-3">
                 {/* 进度条 */}

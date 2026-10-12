@@ -175,6 +175,7 @@ pub fn run() {
             relocate_commands::remove_migration_record,
             relocate_commands::get_relocate_config,
             relocate_commands::save_relocate_config,
+            relocate_commands::get_target_drive_free,
             // M6 启动与内存
             commands::list_startup_items,
             commands::set_startup_enabled,

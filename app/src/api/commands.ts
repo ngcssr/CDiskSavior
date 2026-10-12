@@ -105,6 +105,7 @@ export const api_relocate = {
   remove_migration_record: (recordId: string) => invoke<void>("remove_migration_record", { recordId }),
   get_relocate_config: () => invoke<RelocateConfig>("get_relocate_config"),
   save_relocate_config: (cfg: RelocateConfig) => invoke<void>("save_relocate_config", { configValue: cfg }),
+  get_target_drive_free: (path: string) => invoke<number>("get_target_drive_free", { path }),
 };
 
 // ============ M5 系统瘦身（28） ============
