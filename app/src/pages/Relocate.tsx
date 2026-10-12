@@ -268,6 +268,12 @@ export default function Relocate() {
                     )}
                   </div>
                 )}
+                {targetFree === null && config.targetRoot && (
+                  <div className="mt-1 text-xs text-[var(--color-text-secondary)]">剩余空间：查询中…</div>
+                )}
+                {!config.targetRoot && (
+                  <div className="mt-1 text-xs text-[var(--color-caution)]">未设置目标盘——点击右侧「选择」</div>
+                )}
               </div>
               <button
                 onClick={pickTarget}

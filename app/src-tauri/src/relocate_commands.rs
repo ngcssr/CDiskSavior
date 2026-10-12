@@ -236,6 +236,7 @@ pub fn get_relocate_config(app: AppHandle) -> Result<RelocateConfig, String> {
 pub fn get_target_drive_free(path: String) -> Result<u64, String> {
     use windows::core::PCWSTR;
     use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+    crate::scan_log(&format!("get_target_drive_free called path={}", path));
     // GetDiskFreeSpaceExW 只接受盘符根路径（如 "G:\"），子目录路径
     // 会失败——从 path 提取盘符根
     let root = if path.len() >= 2 && path.as_bytes()[1] == b':' {
@@ -252,11 +253,19 @@ pub fn get_target_drive_free(path: String) -> Result<u64, String> {
     let mut avail: u64 = 0;
     let mut total: u64 = 0;
     let mut free: u64 = 0;
-    unsafe {
+    let r = unsafe {
         GetDiskFreeSpaceExW(PCWSTR(wide.as_ptr()), Some(&mut avail), Some(&mut total), Some(&mut free))
-            .map_err(|e| format!("查询磁盘空间失败（root={}）: {:?}", root, e))?;
+    };
+    match r {
+        Ok(_) => {
+            crate::scan_log(&format!("get_target_drive_free ok root={} avail={}", root, avail));
+            Ok(avail)
+        }
+        Err(e) => {
+            crate::scan_log(&format!("get_target_drive_free ERR root={} {:?}", root, e));
+            Err(format!("查询磁盘空间失败（root={}）: {:?}", root, e))
+        }
     }
-    Ok(avail)
 }
 
 /// 保存迁移配置（含 R9 校验）
