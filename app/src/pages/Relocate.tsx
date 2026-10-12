@@ -56,7 +56,8 @@ export default function Relocate() {
         setHistory(hist);
         // 查询目标盘剩余空间
         if (cfg.targetRoot) {
-          try { setTargetFree(await api_relocate.get_target_drive_free(cfg.targetRoot)); } catch {}
+          try { setTargetFree(await api_relocate.get_target_drive_free(cfg.targetRoot)); }
+          catch (e: any) { setError(`查询目标盘剩余空间失败: ${e?.message ?? e}`); }
         }
       } catch (e: any) {
         setError(e?.message ?? String(e));
@@ -131,7 +132,7 @@ export default function Relocate() {
       const newCfg = { ...config!, targetRoot: dir };
       setConfig(newCfg);
       await api_relocate.save_relocate_config(newCfg);
-      try { setTargetFree(await api_relocate.get_target_drive_free(dir)); } catch {}
+      try { setTargetFree(await api_relocate.get_target_drive_free(dir)); } catch (e: any) { setError(`查询目标盘剩余空间失败: ${e?.message ?? e}`); }
       addLog(`目标盘已更换为 ${dir}`);
     } catch (e: any) {
       setError(e?.message ?? String(e));

@@ -236,13 +236,25 @@ pub fn get_relocate_config(app: AppHandle) -> Result<RelocateConfig, String> {
 pub fn get_target_drive_free(path: String) -> Result<u64, String> {
     use windows::core::PCWSTR;
     use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
-    let wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
+    // GetDiskFreeSpaceExW 只接受盘符根路径（如 "G:\"），子目录路径
+    // 会失败——从 path 提取盘符根
+    let root = if path.len() >= 2 && path.as_bytes()[1] == b':' {
+        let drive = path.as_bytes()[0] as char;
+        if drive.is_ascii_alphabetic() {
+            format!("{}:\\", drive)
+        } else {
+            path.clone()
+        }
+    } else {
+        path.clone()
+    };
+    let wide: Vec<u16> = root.encode_utf16().chain(std::iter::once(0)).collect();
     let mut avail: u64 = 0;
     let mut total: u64 = 0;
     let mut free: u64 = 0;
     unsafe {
         GetDiskFreeSpaceExW(PCWSTR(wide.as_ptr()), Some(&mut avail), Some(&mut total), Some(&mut free))
-            .map_err(|e| format!("查询磁盘空间失败: {:?}", e))?;
+            .map_err(|e| format!("查询磁盘空间失败（root={}）: {:?}", root, e))?;
     }
     Ok(avail)
 }
