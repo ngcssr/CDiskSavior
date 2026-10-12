@@ -95,6 +95,8 @@ pub async fn scan_drive(
     }
 
     tauri::async_runtime::spawn_blocking(move || {
+        let t_scan = std::time::Instant::now();
+        crate::scan_log(&format!("scan_drive start root={}", root));
         // 快路径优先级：提权时进程内单遍 MFT（最快）→ 未提权时服务管道
         // （SYSTEM 代做）→ jwalk 兜底。避免提权时误走旧版服务侧车拖慢。
         let scanned_root = root.clone();
@@ -109,13 +111,18 @@ pub async fn scan_drive(
             t.len() == 2 && t.as_bytes()[1] == b':'
         };
         let letter = root.chars().next().filter(|c| c.is_ascii_alphabetic());
+        let t_elev = std::time::Instant::now();
         let elevated = crate::lightc_mft::is_elevated();
+        let mft_ok = letter.is_some() && crate::lightc_mft::mft_available(letter.unwrap());
+        crate::scan_log(&format!(
+            "scan_drive elevated={} mft_available={} (is_elevated+mft_check {:?})",
+            elevated, mft_ok, t_elev.elapsed()
+        ));
 
-        let tree = if elevated && is_drive_root && letter.is_some()
-            && crate::lightc_mft::mft_available(letter.unwrap())
-        {
+        let tree = if elevated && is_drive_root && letter.is_some() && mft_ok {
             // 进程内单遍 MFT（提权时最快，不依赖服务侧车版本）
-            match crate::mft_scan::scan_mft(&root, emit_progress) {
+            let t_mft = std::time::Instant::now();
+            let r = match crate::mft_scan::scan_mft(&root, emit_progress) {
                 Ok(t) => match serde_json::to_value(&t)
                     .and_then(|v| serde_json::from_value::<crate::scan::TreeNode>(v))
                 {
@@ -123,10 +130,16 @@ pub async fn scan_drive(
                     Err(_) => None,
                 },
                 Err(_) => None,
-            }
+            };
+            crate::scan_log(&format!("scan_drive scan_mft+serde done {:?} hit={}", t_mft.elapsed(), r.is_some()));
+            r
         } else if !elevated && crate::svc_client::service_installed() {
-            crate::svc_client::scan_via_service(&root, emit_progress).ok()
+            let t_svc = std::time::Instant::now();
+            let r = crate::svc_client::scan_via_service(&root, emit_progress).ok();
+            crate::scan_log(&format!("scan_drive service done {:?} hit={}", t_svc.elapsed(), r.is_some()));
+            r
         } else {
+            crate::scan_log("scan_drive fallback jwalk");
             None
         };
         let tree = match tree {
@@ -143,6 +156,7 @@ pub async fn scan_drive(
                 *guard = Some((normalize_drive_key(&scanned_root), tree.clone()));
             }
         }
+        crate::scan_log(&format!("scan_drive done total {:?}", t_scan.elapsed()));
         Ok(tree)
     })
     .await

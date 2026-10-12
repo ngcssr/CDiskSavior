@@ -46,6 +46,25 @@ fn startup_log(msg: &str) {
     }
 }
 
+/// 扫描性能诊断日志（%TEMP%\cdisk_scan.log，unix 毫秒时间戳，相邻行差值即阶段耗时）
+pub fn scan_log(msg: &str) {
+    #[cfg(all(windows, not(debug_assertions)))]
+    {
+        use std::io::Write;
+        let ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(std::env::temp_dir().join("cdisk_scan.log"))
+        {
+            let _ = writeln!(f, "[{}] {}", ms, msg);
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     STARTUP_T0.get_or_init(std::time::Instant::now);

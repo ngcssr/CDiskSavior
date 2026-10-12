@@ -636,19 +636,27 @@ pub fn scan_mft<F: FnMut(u64, u64, f32, &str)>(
     root: &str,
     mut progress: F,
 ) -> Result<TreeNode, String> {
+    let t_all = std::time::Instant::now();
     let (letter, root_norm) = parse_root(root)?;
     // 优先走共享原始缓存（其他 tab 已加载时跳过读盘+解析）
     let (mft, rec) = match crate::growth::get_cached_mft_raw(letter) {
-        Some(cached) => cached,
+        Some(cached) => {
+            crate::scan_log("scan_mft load: raw-cache hit");
+            cached
+        }
         None => {
+            let t_load = std::time::Instant::now();
             let loaded = load_and_parse(letter, &mut progress)?;
+            crate::scan_log(&format!("scan_mft load_and_parse {:?}", t_load.elapsed()));
             crate::growth::take_and_cache_mft_raw(letter, loaded.0, loaded.1)
         }
     };
 
     let last = (0u64, 0u64);
     progress(last.0, last.1, 100.0, "正在汇总目录");
+    let t_agg = std::time::Instant::now();
     let index = aggregate(&rec);
+    crate::scan_log(&format!("scan_mft aggregate {:?}", t_agg.elapsed()));
 
     // 名字仅为最终保留的少量节点解析（get_best_file_name 兼容属性列表等边界）
     // 加缓存：每个记录号只解析一次（build_tree 递归 28K 节点，避免重复慢调用）
@@ -665,7 +673,9 @@ pub fn scan_mft<F: FnMut(u64, u64, f32, &str)>(
         name_cache.borrow_mut().insert(n, s.clone());
         s
     };
+    let t_tree = std::time::Instant::now();
     let tree = build_tree(&rec, &index, &resolve, ROOT_RECORD, root_norm.clone(), &root_norm, 0);
+    crate::scan_log(&format!("scan_mft build_tree {:?} total {:?}", t_tree.elapsed(), t_all.elapsed()));
     Ok(tree)
 }
 

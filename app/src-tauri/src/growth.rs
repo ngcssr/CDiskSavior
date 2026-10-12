@@ -25,27 +25,41 @@ const MFT_CACHE_TTL_SECS: u64 = 300;
 /// 获取（或复用）全盘 MFT 统计——热点/增长/大文件统一入口。
 /// 三级路径：① stats 缓存命中 → ② raw 缓存派生（TreeMap 已加载）→ ③ 加载解析。
 pub fn get_mft_stats(drive: char) -> Result<crate::lightc_mft::FullDriveStats, String> {
+    let t_all = std::time::Instant::now();
     let drive = drive.to_ascii_uppercase();
     let root_norm = format!("{}:\\", drive);
+    crate::scan_log(&format!("get_mft_stats start drive={}", drive));
     // ① stats 缓存快路径
     if let Ok(guard) = MFT_DATA_CACHE.lock() {
         if let Some(cache) = guard.as_ref() {
             if cache.drive == drive && cache.timestamp.elapsed().as_secs() < MFT_CACHE_TTL_SECS {
+                crate::scan_log(&format!("get_mft_stats ①stats-cache hit {:?}", t_all.elapsed()));
                 return Ok(cache.stats.clone());
             }
         }
     }
     // ② raw 缓存（TreeMap 已加载过原始数据）→ 直接派生 stats
     if let Some((mft, rec)) = get_cached_mft_raw(drive) {
+        let t_d = std::time::Instant::now();
         let stats = crate::mft_scan::derive_stats_from_records(&mft, &rec, &root_norm);
+        crate::scan_log(&format!("get_mft_stats ②raw-cache derive {:?} total {:?}", t_d.elapsed(), t_all.elapsed()));
         cache_mft_stats(drive, stats.clone());
         return Ok(stats);
     }
     // ③ 服务管道（SYSTEM 权限代做 MFT）——仅【未提权】时走。
     //    提权时进程内单遍更快（省去服务进程启动 + 管道往返开销），且避免
     //    旧版侧车不识别 scan_stats 命令导致的无谓重试。
-    if !crate::lightc_mft::is_elevated() && crate::svc_client::service_installed() {
+    let t_elev = std::time::Instant::now();
+    let elevated = crate::lightc_mft::is_elevated();
+    let svc_installed = crate::svc_client::service_installed();
+    crate::scan_log(&format!(
+        "get_mft_stats elevated={} svc_installed={} (checks {:?})",
+        elevated, svc_installed, t_elev.elapsed()
+    ));
+    if !elevated && svc_installed {
+        let t_svc = std::time::Instant::now();
         if let Ok(stats) = crate::svc_client::scan_stats_via_service(&root_norm) {
+            crate::scan_log(&format!("get_mft_stats ③service {:?} total {:?}", t_svc.elapsed(), t_all.elapsed()));
             cache_mft_stats(drive, stats.clone());
             return Ok(stats);
         }
@@ -67,9 +81,13 @@ pub fn get_mft_stats(drive: char) -> Result<crate::lightc_mft::FullDriveStats, S
         return Ok(stats);
     }
     // 加载 + 解析 + 双缓存（raw + stats）
+    let t_load = std::time::Instant::now();
     let (mft, rec) = crate::mft_scan::load_and_parse(drive, &mut |_, _, _, _| {})?;
+    crate::scan_log(&format!("get_mft_stats ④load_and_parse {:?}", t_load.elapsed()));
     let (mft, rec) = take_and_cache_mft_raw(drive, mft, rec);
+    let t_d = std::time::Instant::now();
     let stats = crate::mft_scan::derive_stats_from_records(&mft, &rec, &root_norm);
+    crate::scan_log(&format!("get_mft_stats ④derive {:?} total {:?}", t_d.elapsed(), t_all.elapsed()));
     cache_mft_stats(drive, stats.clone());
     Ok(stats)
 }
