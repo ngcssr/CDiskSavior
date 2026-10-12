@@ -21,17 +21,9 @@
          HTML 解析即绘制，窗口一出现就是有内容的品牌页。
          React 渲染在 #root 进行（被本层覆盖），App 挂载完成 + 首帧
          绘制后由 App.tsx 移除本层，无缝衔接完整 UI。 -->
-    <div id="splash" style="position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(160deg,#f4f6f9 0%,#e8eef5 100%);font-family:'Segoe UI',system-ui,sans-serif;gap:22px;">
-      <div style="animation:cds-fade .4s ease-out;">
-        <svg width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="#0e7490" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="filter:drop-shadow(0 4px 12px rgba(14,116,144,.25));">
-          <path d="M12 2v8"/><path d="m16 6-4 4-4-4"/><rect x="5" y="14" width="14" height="7" rx="2"/><path d="M9 17.5h.01"/><path d="M15 17.5h.01"/>
-        </svg>
-      </div>
-      <div style="animation:cds-fade .4s ease-out .08s backwards;display:flex;flex-direction:column;align-items:center;gap:6px;">
-        <div style="font-size:19px;font-weight:700;color:#1a2b3c;letter-spacing:.5px;">CDisk Savior</div>
-        <div style="font-size:12px;color:#64748b;">磁盘与内存维护助手</div>
-      </div>
-      <div style="margin-top:6px;width:28px;height:28px;border:3px solid #d7dde6;border-top-color:#0e7490;border-radius:50%;animation:cds-spin .9s linear infinite;"></div>
+    <div id="splash" style="position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;background:#f4f6f9;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;">
+      <div style="width:32px;height:32px;border:3px solid #d7dde6;border-top-color:#0e7490;border-radius:50%;animation:cds-spin .9s linear infinite;"></div>
+      <div style="color:#64748b;font-size:13px;">正在启动…</div>
     </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>

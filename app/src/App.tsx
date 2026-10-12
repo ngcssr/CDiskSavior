@@ -9,15 +9,19 @@ export default function App() {
   const { active, setActive, theme } = useAppStore();
 
   // 启动衔接：窗口默认可见，HTML 内联欢迎页（#splash）先显示；
-  // 本组件首次 commit（DOM 就绪）后等两帧（首帧绘制完成）再移除
-  // 欢迎页——从欢迎页到完整 UI 无缝切换，全程无白屏。
+  // 本组件 commit 后延迟 800ms + 双 rAF 再移除欢迎页——rAF 只保证
+  // DOM commit，不保证 WebView2 合成器完成光栅化；过早移除会露出
+  // React 无样式半成品（实测左上角裸 logo 问题）。延迟给足光栅化时间。
   useEffect(() => {
     invoke("window_ready").catch(() => {});
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        document.getElementById("splash")?.remove();
-      })
-    );
+    const t = setTimeout(() => {
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          document.getElementById("splash")?.remove();
+        })
+      );
+    }, 800);
+    return () => clearTimeout(t);
   }, []);
 
   return (
