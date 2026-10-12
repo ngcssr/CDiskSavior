@@ -235,6 +235,11 @@ export default function Relocate() {
         </p>
       </div>
 
+      {/* 临时诊断：直接显示状态值，绕过条件渲染 */}
+      <div style={{ position: 'fixed', top: 60, right: 12, zIndex: 99999, background: '#000', color: '#0f0', font: '11px monospace', padding: '4px 8px', borderRadius: 4, pointerEvents: 'none' }}>
+        DBG free={String(targetFree)} root={config?.targetRoot ?? 'null'}
+      </div>
+
       <div className="flex-1 overflow-y-auto p-6">
         {error && (
           <div className="mb-4 flex items-center gap-2 rounded-xl border border-[var(--color-danger)]/30 bg-[var(--color-danger-bg-soft)] px-4 py-3 text-sm text-[var(--color-danger-text)]">
