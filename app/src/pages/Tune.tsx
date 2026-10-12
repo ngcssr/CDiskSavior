@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { api_tune } from "../api/commands";
-import { Rocket, ToggleLeft, ToggleRight, Shield } from "lucide-react";
+import { Rocket, ToggleLeft, ToggleRight, Shield, ExternalLink } from "lucide-react";
 
 import type { StartupItem } from "../api/commands";
 
@@ -44,6 +44,13 @@ export default function Tune() {
         <div className="flex items-center gap-2">
           <Rocket size={20} className="text-[var(--color-primary)]" />
           <h1 className="text-xl font-bold">启动与内存</h1>
+          <button
+            onClick={() => api_tune.open_startup_manager().catch(() => {})}
+            className="ml-auto flex items-center gap-1.5 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-1.5 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
+          >
+            <ExternalLink size={12} />
+            打开系统启动管理器
+          </button>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto p-6">

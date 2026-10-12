@@ -22,6 +22,7 @@ function fmt(bytes: number): string {
 export default function Slim() {
   const [status, setStatus] = useState<any>(null);
   const [drivers, setDrivers] = useState<any[]>([]);
+  const [driverSelected, setDriverSelected] = useState<Set<string>>(new Set());
   const [aiModels, setAiModels] = useState<any[]>([]);
   const [shellIcons, setShellIcons] = useState<ShellIconInfo[] | null>(null);
   const [shellIconsLoading, setShellIconsLoading] = useState(false);
@@ -53,6 +54,42 @@ export default function Slim() {
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  // 旧驱动操作
+  const toggleDriver = (id: string) =>
+    setDriverSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleAllDrivers = () =>
+    setDriverSelected(prev => prev.size === drivers.length ? new Set() : new Set(drivers.map(d => d.id)));
+  const deleteSelectedDrivers = async () => {
+    const ids = Array.from(driverSelected);
+    if (ids.length === 0) return;
+    if (!confirm(`确认删除 ${ids.length} 个旧驱动备份？此操作不可恢复。`)) return;
+    setBusy("删除旧驱动");
+    setError(null);
+    try {
+      const r = (await api_slim.delete_old_drivers(ids)) as any;
+      setResult(r.message || `已删除 ${ids.length} 个旧驱动`);
+      setDriverSelected(new Set());
+      await refresh();
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+  const restoreDrivers = async () => {
+    setBusy("恢复驱动备份");
+    setError(null);
+    try {
+      const r = (await api_slim.restore_all_driver_backups()) as any;
+      setResult(r.message || "驱动备份恢复完成");
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+  const openDriverBackup = () => api_slim.open_driver_backup_dir().catch(() => {});
 
   const scanShellIcons = useCallback(async () => {
     setShellIconsLoading(true);
@@ -294,16 +331,55 @@ export default function Slim() {
             <HardDrive size={14} /> 旧驱动（{drivers.length}）
           </h2>
           {drivers.length > 0 ? (
-            <div className="space-y-1">
-              {drivers.slice(0, 10).map((d) => (
-                <div key={d.id} className="flex items-center gap-3 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-2">
-                  <div className="flex-1">
-                    <div className="text-sm font-medium">{d.name}</div>
-                    <div className="text-xs text-[var(--color-text-secondary)]">日期：{d.date}</div>
+            <>
+              <div className="mb-2 flex items-center gap-2">
+                <button
+                  onClick={toggleAllDrivers}
+                  className="text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"
+                >
+                  {driverSelected.size === drivers.length ? "取消全选" : "全选"}
+                </button>
+                <button
+                  onClick={deleteSelectedDrivers}
+                  disabled={driverSelected.size === 0 || busy !== null}
+                  className="flex items-center gap-1 rounded-lg bg-[var(--color-danger)] px-2.5 py-1 text-xs text-white disabled:opacity-40"
+                >
+                  <Trash2 size={12} />
+                  删除所选（{driverSelected.size}）
+                </button>
+                <button
+                  onClick={restoreDrivers}
+                  disabled={busy !== null}
+                  className="flex items-center gap-1 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1 text-xs disabled:opacity-40"
+                >
+                  <Undo2 size={12} />
+                  恢复全部备份
+                </button>
+                <button
+                  onClick={openDriverBackup}
+                  className="flex items-center gap-1 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-2.5 py-1 text-xs text-[var(--color-text-secondary)]"
+                >
+                  <FolderOpen size={12} />
+                  备份目录
+                </button>
+              </div>
+              <div className="space-y-1">
+                {drivers.slice(0, 30).map((d) => (
+                  <div key={d.id} className="flex items-center gap-3 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-2">
+                    <input
+                      type="checkbox"
+                      checked={driverSelected.has(d.id)}
+                      onChange={() => toggleDriver(d.id)}
+                      className="accent-[var(--color-primary)]"
+                    />
+                    <div className="flex-1">
+                      <div className="text-sm font-medium">{d.name}</div>
+                      <div className="text-xs text-[var(--color-text-secondary)]">日期：{d.date}</div>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            </>
           ) : (
             <div className="py-4 text-center text-sm text-[var(--color-text-secondary)]">无旧驱动</div>
           )}

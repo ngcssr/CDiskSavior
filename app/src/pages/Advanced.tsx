@@ -52,15 +52,31 @@ export default function Advanced() {
     }
   };
 
+  const [deepAnalysis, setDeepAnalysis] = useState<any>(null);
   const deepAnalyze = async () => {
     setScanning(true);
     try {
-      const r = await api_advanced.run_deep_analyze();
+      const r = (await api_advanced.run_deep_analyze()) as any;
+      setDeepAnalysis(r);
       setResult(`深度分析完成：${r?.items?.length ?? 0} 个可清理项，共 ${fmt(r?.totalSize ?? 0)}`);
     } catch (e: any) {
       setError(e?.message ?? String(e));
     } finally {
       setScanning(false);
+    }
+  };
+  const deepClean = async () => {
+    setCleaning(true);
+    setError(null);
+    setResult(null);
+    try {
+      const r = (await api_advanced.run_deep_clean()) as any;
+      setResult(`深度清理完成：清理 ${r?.items?.length ?? 0} 项，释放 ${fmt(r?.totalSize ?? 0)}`);
+      setDeepAnalysis(null);
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setCleaning(false);
     }
   };
 
@@ -128,6 +144,16 @@ export default function Advanced() {
             {scanning ? <RefreshCw size={16} className="animate-spin" /> : <FileSearch size={16} />}
             深度分析
           </button>
+          {deepAnalysis && (
+            <button
+              onClick={deepClean}
+              disabled={cleaning || scanning}
+              className="flex items-center gap-2 rounded-lg border border-[var(--color-primary)]/40 bg-[var(--color-primary-soft)] px-4 py-2 text-sm font-medium text-[var(--color-primary)] disabled:opacity-50"
+            >
+              {cleaning ? <RefreshCw size={16} className="animate-spin" /> : <Zap size={16} />}
+              {cleaning ? "清理中…" : `执行清理（${deepAnalysis.items?.length ?? 0} 项）`}
+            </button>
+          )}
         </section>
 
         {/* 说明 */}

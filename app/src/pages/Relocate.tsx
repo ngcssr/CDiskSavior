@@ -4,7 +4,7 @@ import { api_relocate, api_settings } from "../api/commands";
 import type { RelocateTarget, RelocateConfig, MigrationRecord } from "../api/commands";
 import {
   HardDriveDownload, RefreshCw, Play, Pause, X, RotateCcw,
-  Folder, AlertTriangle, CheckCircle, Trash2, FolderInput,
+  Folder, AlertTriangle, CheckCircle, Trash2, FolderInput, Search,
 } from "lucide-react";
 
 type ProgressEvent = {
@@ -36,6 +36,9 @@ export default function Relocate() {
   const [logs, setLogs] = useState<string[]>([]);
   const [history, setHistory] = useState<MigrationRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [lockingProcs, setLockingProcs] = useState<any[]>([]);
+  const [lockLoading, setLockLoading] = useState(false);
+  const [killPids, setKillPids] = useState<Set<number>>(new Set());
   const unlistenRef = useRef<UnlistenFn | null>(null);
 
   const addLog = (msg: string) => setLogs((l) => [...l.slice(-50), msg]);
@@ -115,6 +118,35 @@ export default function Relocate() {
     });
   };
 
+  // 检查占用进程（对已选目录批量查）
+  const checkLocking = async () => {
+    setLockLoading(true);
+    setError(null);
+    try {
+      const all: any[] = [];
+      for (const path of selected) {
+        const procs = await api_relocate.list_locking_processes(path);
+        all.push(...(procs ?? []).map((p: any) => ({ ...p, sourcePath: path })));
+      }
+      setLockingProcs(all);
+      setKillPids(new Set());
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setLockLoading(false);
+    }
+  };
+  const toggleKillPid = (pid: number) =>
+    setKillPids(prev => { const n = new Set(prev); n.has(pid) ? n.delete(pid) : n.add(pid); return n; });
+  const killSelected = async () => {
+    for (const pid of killPids) {
+      try { await api_relocate.kill_locking_process(pid); } catch {}
+    }
+    addLog(`已结束 ${killPids.size} 个占用进程`);
+    setKillPids(new Set());
+    await checkLocking();
+  };
+
   // 开始迁移
   const startMigration = async () => {
     if (!config?.targetRoot || selected.size === 0) return;
@@ -125,7 +157,7 @@ export default function Relocate() {
       await api_relocate.start_migration(
         Array.from(selected),
         config.targetRoot,
-        [], // killPids: P2 暂无进程列表（RM stub）
+        Array.from(killPids), // 用户选中的占用进程（之前是空数组——stub）
       );
     } catch (e: any) {
       setError(e?.message ?? String(e));
@@ -393,13 +425,55 @@ export default function Relocate() {
                 </div>
               </div>
             ) : (
-              <button
-                onClick={startMigration}
-                className="flex items-center gap-2 rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white"
-              >
-                <HardDriveDownload size={16} />
-                开始迁移 {selected.size} 个目录（{fmt(totalSelected)}）
-              </button>
+              <div className="space-y-3">
+                {/* 占用进程检查 */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={checkLocking}
+                    disabled={lockLoading}
+                    className="flex items-center gap-1.5 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-1.5 text-xs text-[var(--color-text-secondary)] disabled:opacity-50"
+                  >
+                    <Search size={12} />
+                    {lockLoading ? "检查中…" : "检查占用进程"}
+                  </button>
+                  {lockingProcs.length > 0 && (
+                    <span className="text-xs text-[var(--color-caution)]">
+                      {lockingProcs.length} 个进程占用
+                    </span>
+                  )}
+                </div>
+                {lockingProcs.length > 0 && (
+                  <div className="space-y-1 rounded-lg bg-[var(--color-surface-hover)] p-2">
+                    {lockingProcs.map((p, i) => (
+                      <label key={i} className="flex cursor-pointer items-center gap-2 px-1 py-0.5 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={killPids.has(p.pid)}
+                          onChange={() => toggleKillPid(p.pid)}
+                          className="accent-[var(--color-danger)]"
+                        />
+                        <span className="font-medium">{p.name}</span>
+                        <span className="text-[var(--color-text-secondary)]">PID: {p.pid}</span>
+                        <span className="truncate text-[var(--color-text-secondary)]" title={p.sourcePath}>{p.sourcePath}</span>
+                      </label>
+                    ))}
+                    <button
+                      onClick={killSelected}
+                      disabled={killPids.size === 0}
+                      className="mt-1 flex items-center gap-1 rounded bg-[var(--color-danger)] px-2 py-1 text-xs text-white disabled:opacity-40"
+                    >
+                      <X size={10} /> 结束选中进程（{killPids.size}）
+                    </button>
+                  </div>
+                )}
+                <button
+                  onClick={startMigration}
+                  className="flex items-center gap-2 rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white"
+                >
+                  <HardDriveDownload size={16} />
+                  开始迁移 {selected.size} 个目录（{fmt(totalSelected)}）
+                </button>
+              </div>
             )}
           </section>
         )}
