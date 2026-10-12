@@ -21,10 +21,6 @@
          HTML 解析即绘制，窗口一出现就是有内容的品牌页。
          React 渲染在 #root 进行（被本层覆盖），App 挂载完成 + 首帧
          绘制后由 App.tsx 移除本层，无缝衔接完整 UI。 -->
-    <div id="splash" style="position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;background:#f4f6f9;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;">
-      <div style="width:32px;height:32px;border:3px solid #d7dde6;border-top-color:#0e7490;border-radius:50%;animation:cds-spin .9s linear infinite;"></div>
-      <div style="color:#64748b;font-size:13px;">正在启动…</div>
-    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
