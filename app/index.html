@@ -5,6 +5,14 @@
     <link rel="icon" type="image/svg+xml" href="/cdisk.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CDisk Savior</title>
+    <style>
+      /* 消除启动闪烁：tokens.css 的 :root 默认深色 --color-bg 会应用到
+         body（background: var(--color-bg)），且其 link 在本 style 之后
+         加载、优先级更高 → React 挂载前窗口闪深色。
+         !important 锁浅色；App 根 div 铺满全屏且自带主题背景，
+         深色主题用户不受影响。 */
+      html, body { background: #f4f6f9 !important; }
+    </style>
   </head>
   <body>
     <div id="root"></div>
