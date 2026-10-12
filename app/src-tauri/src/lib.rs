@@ -80,6 +80,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            // 零白屏：前端 DOM 就绪后触发 Rust show
+            commands::window_ready,
             // M1 总览
             commands::get_drives,
             commands::memory_report,
@@ -225,8 +227,23 @@ pub fn run() {
             slim_commands::scan_ai_model_assets,
             slim_commands::delete_ai_model
         ])
-        .on_page_load(|_webview, _payload| {
-            startup_log("on_page_load (index.html loaded)");
+        .on_page_load(move |webview, payload| {
+            startup_log(&format!("on_page_load {:?}", payload.event()));
+            // 零白屏兜底：页面加载后 1.2s 窗口仍不可见 → show。
+            // 正常路径前端 window_ready 更早触发（窗口出现即完整 UI）；
+            // React 被隐藏窗口调度节流时由此兜底，窗口显示 index.html
+            // 静态启动骨架（转圈动画），React 挂载后无缝替换为真实 UI。
+            // 幂等：show 后 is_visible=true 跳过。Started/Finished 均启动
+            // 兜底（强杀残留等场景事件序列不定，不能依赖单一事件）。
+            let w = webview.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(1200));
+                let win = w.window();
+                if !win.is_visible().unwrap_or(true) {
+                    let _ = win.show();
+                    startup_log("fallback show (skeleton) after page load + 1.2s");
+                }
+            });
         })
         .setup(|app| {
             startup_log("setup enter (WebView created)");

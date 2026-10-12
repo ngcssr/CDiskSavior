@@ -12,20 +12,18 @@
          !important 锁浅色；App 根 div 铺满全屏且自带主题背景，
          深色主题用户不受影响。 */
       html, body { background: #f4f6f9 !important; }
+      @keyframes cds-spin { to { transform: rotate(360deg); } }
     </style>
   </head>
   <body>
-    <div id="root"></div>
-    <script>
-      // 启动诊断（定位白屏阶段）：左上角显示各阶段耗时，稳定后移除
-      var __t0 = performance.now();
-      var __el = document.createElement("div");
-      __el.style.cssText = "position:fixed;top:8px;left:8px;z-index:99999;background:rgba(0,0,0,.85);color:#0f0;font:12px monospace;padding:4px 8px;border-radius:4px;pointer-events:none;";
-      document.body.appendChild(__el);
-      window.__perf = function (n) { __el.textContent = n + " : " + Math.round(performance.now() - __t0) + "ms"; };
-      window.__perf("html parsed");
-      window.addEventListener("load", function () { window.__perf("window load"); });
-    </script>
+    <!-- 静态启动骨架：React 挂载前显示（挂载时 createRoot 自动替换），
+         保证任何时刻 show 窗口都是有内容的（零白屏兜底） -->
+    <div id="root">
+      <div style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#f4f6f9;gap:16px;font-family:'Segoe UI',system-ui,sans-serif;">
+        <div style="width:42px;height:42px;border:4px solid #d7dde6;border-top-color:#0e7490;border-radius:50%;animation:cds-spin .9s linear infinite;"></div>
+        <div style="color:#5b6b7c;font-size:13px;">正在启动 CDisk Savior…</div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

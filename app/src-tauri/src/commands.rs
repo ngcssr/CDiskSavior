@@ -5,6 +5,18 @@
 
 // ============ M1 总览（P3 真实实现） ============
 
+/// 零白屏显示：前端 React 首次 commit（DOM 就绪）后调用，
+/// Rust 直接持有 WebviewWindow 对象 show（绕过前端 window plugin
+/// 的 label 查找兼容性问题），窗口出现即完整 UI。
+#[tauri::command]
+pub fn window_ready(app: tauri::AppHandle) {
+    use tauri::Manager;
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.show();
+        crate::startup_log("show via window_ready command");
+    }
+}
+
 /// 驱动器列表（真实 Windows API：GetLogicalDriveStringsW + GetDiskFreeSpaceExW）
 #[tauri::command]
 pub fn get_drives() -> Result<Vec<crate::scan::DriveInfo>, String> {
