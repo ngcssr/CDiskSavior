@@ -13,27 +13,33 @@ use std::process::Command;
 const TASK_NAME: &str = "CDiskSaviorElevated";
 
 pub fn ensure_elevation() {
-    if crate::lightc_mft::is_elevated() {
-        // 已提权：延迟 10s 创建计划任务，彻底避开 WebView2 初始化窗口
-        // （schtasks 进程启动会抢占 CPU/磁盘，导致启动白屏）
-        std::thread::spawn(|| {
+    // 整体后台化：token API（OpenProcessToken/GetTokenInformation）在
+    // 本机可能被安全软件 hook，Explorer 双击场景实测拖慢 9.5s——
+    // 绝不能阻塞主线程启动路径。主流程调用本函数后零等待立即返回。
+    std::thread::spawn(|| {
+        if crate::lightc_mft::is_elevated() {
+            // 已提权：再延迟 10s 创建计划任务（schtasks 进程启动会
+            // 抢占 CPU/磁盘，避开 WebView2 初始化窗口）
             std::thread::sleep(std::time::Duration::from_secs(10));
             ensure_task_exists();
-        });
-        return;
-    }
-    if task_matches_current() {
-        let _ = Command::new("schtasks")
-            .args(["/run", "/tn", TASK_NAME])
-            .creation_flags(0x08000000) // CREATE_NO_WINDOW
-            .spawn();
+            return;
+        }
+        // 未提权（UAC 开启机器）：拉起提权实例后退出当前实例。
+        // exit 前提权实例已 spawn（schtasks /run 异步），启动需数秒，
+        // 单实例互斥届时已释放，不冲突。
+        if task_matches_current() {
+            let _ = Command::new("schtasks")
+                .args(["/run", "/tn", TASK_NAME])
+                .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                .spawn();
+        } else {
+            // 首次或 exe 已移动：弹一次 UAC 重建任务并启动
+            let exe = std::env::current_exe().unwrap_or_default();
+            let exe_str = exe.to_string_lossy().to_string();
+            unsafe { shell_execute_runas(&exe_str); }
+        }
         std::process::exit(0);
-    }
-    // 首次或 exe 已移动：弹一次 UAC 重建任务并启动
-    let exe = std::env::current_exe().unwrap_or_default();
-    let exe_str = exe.to_string_lossy().to_string();
-    unsafe { shell_execute_runas(&exe_str); }
-    std::process::exit(0);
+    });
 }
 
 fn ensure_task_exists() {
