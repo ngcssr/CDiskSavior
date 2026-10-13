@@ -461,15 +461,23 @@ export default function Relocate() {
               <div className="mb-3">
                 <div className="mb-1 flex items-center gap-2">
                   <div className="h-4 w-48 overflow-hidden rounded bg-[var(--color-surface-hover)]">
-                    <div
-                      className="h-full rounded bg-[var(--color-primary)] transition-all"
-                      style={{ width: `${progressPct}%` }}
-                    />
+                    {progress?.bytesTotal === 0 ? (
+                      <div className="h-full w-1/3 animate-pulse rounded bg-[var(--color-primary)]" />
+                    ) : (
+                      <div
+                        className="h-full rounded bg-[var(--color-primary)] transition-all"
+                        style={{ width: `${progressPct}%` }}
+                      />
+                    )}
                   </div>
-                  <span className="text-sm font-medium tabular-nums">{progressPct.toFixed(0)}%</span>
+                  <span className="text-sm font-medium tabular-nums">
+                    {progress?.bytesTotal === 0 ? "…" : `${progressPct.toFixed(0)}%`}
+                  </span>
                 </div>
                 <div className="text-xs tabular-nums text-[var(--color-text-secondary)]">
-                  {fmt(progress?.bytesDone ?? 0)}/{fmt(progress?.bytesTotal ?? 0)} 速度: {fmt(progress?.speedBps ?? 0)}/s 剩余: {remainingText}
+                  {progress?.bytesTotal === 0
+                    ? `正在分析 ${progress?.source?.split(/[\\/]/).filter(Boolean).pop() ?? ""}（计算目录大小中）…`
+                    : `${fmt(progress?.bytesDone ?? 0)}/${fmt(progress?.bytesTotal ?? 0)} 速度: ${fmt(progress?.speedBps ?? 0)}/s 剩余: ${remainingText}`}
                 </div>
               </div>
             )}

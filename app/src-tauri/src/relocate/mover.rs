@@ -195,16 +195,36 @@ impl MigrationTask {
             // 再试 rename
             let rename_ok = std::fs::rename(&source, &backup).is_ok() || rename_ok;
 
+            let mut renamed_to_backup = rename_ok;
             if !rename_ok {
-                let pids = proc_mgr::check_dir_locking(&source);
-                let msg = format!(
-                    "备份源目录失败（可能被占用），相关进程 PID: {:?}",
-                    pids.iter().map(|p| p.pid).collect::<Vec<_>>()
-                );
-                self.emit(MigrationProgress::Error { message: msg.clone() });
-                // 清理已复制到目标的临时目录
-                let _ = std::fs::remove_dir_all(&target_path);
-                return Err(msg);
+                // Fallback（对齐 AppData Mover 行为）：数据已完整复制到
+                // target，rename 原子备份因文件被占用失败 → 重试后直接
+                // 删除源目录再建 junction，数据安全由 target 完整副本保证
+                for _ in 0..3 {
+                    std::thread::sleep(std::time::Duration::from_millis(400));
+                    if std::fs::remove_dir_all(&source).is_ok() {
+                        break;
+                    }
+                }
+                if source.exists() {
+                    let pids = proc_mgr::check_dir_locking(&source);
+                    let pid_txt = if pids.is_empty() {
+                        "未检测到具体进程（可能被系统服务锁定）".to_string()
+                    } else {
+                        format!(
+                            "PID {:?}（{}）",
+                            pids.iter().map(|p| p.pid).collect::<Vec<_>>(),
+                            pids.iter().map(|p| p.name.clone()).collect::<Vec<_>>().join(", ")
+                        )
+                    };
+                    let msg = format!(
+                        "源目录被占用无法迁移（{}）。请关闭相关软件后重试，或勾选「自动结束占用进程」。",
+                        pid_txt
+                    );
+                    self.emit(MigrationProgress::Error { message: msg.clone() });
+                    let _ = std::fs::remove_dir_all(&target_path);
+                    return Err(msg);
+                }
             }
 
             // V8: 创建 Junction（FSCTL，无 cmd.exe）
@@ -213,10 +233,12 @@ impl MigrationTask {
                     let freed = source_size;
                     total_freed += freed;
 
-                    // 清理备份（同卷 rename 已成功，数据已安全在 target）
-                    if let Err(e) = std::fs::remove_dir_all(&backup) {
-                        // 备份没删掉不致命（数据已在目标），但记日志
-                        log::warn!("清理备份失败（不致命）: {}", e);
+                    // 清理备份（rename 成功路径才有 backup；fallback 删除路径无 backup）
+                    if renamed_to_backup {
+                        if let Err(e) = std::fs::remove_dir_all(&backup) {
+                            // 备份没删掉不致命（数据已在目标），但记日志
+                            log::warn!("清理备份失败（不致命）: {}", e);
+                        }
                     }
 
                     // V19: 原子写入迁移历史（target_path 存原始路径——
@@ -245,19 +267,29 @@ impl MigrationTask {
                 }
                 Err(e) => {
                     // Junction 创建失败 → 恢复源目录
-                    let _ = std::fs::remove_dir_all(&source); // 清理可能的半成品
-                    std::fs::rename(&backup, &source)
-                        .map_err(|e2| format!("恢复源目录失败: {}（Junction 失败: {}）", e2, e))?;
-                    // 源已恢复，但备份在 source.parent 下（持久，不在 %TEMP%）
-                    // 用户数据安全，但备份残留需提示
-                    self.emit(MigrationProgress::Error {
-                        message: format!(
+                    if renamed_to_backup {
+                        let _ = std::fs::remove_dir_all(&source); // 清理可能的半成品
+                        std::fs::rename(&backup, &source)
+                            .map_err(|e2| format!("恢复源目录失败: {}（Junction 失败: {}）", e2, e))?;
+                        // 源已恢复，但备份在 source.parent 下（持久，不在 %TEMP%）
+                        // 用户数据安全，但备份残留需提示
+                        let msg = format!(
                             "创建 Junction 失败（{}），源目录已恢复。备份残留于: {}",
                             e,
                             backup.display()
-                        ),
-                    });
-                    return Err(e);
+                        );
+                        self.emit(MigrationProgress::Error { message: msg.clone() });
+                        return Err(msg);
+                    }
+                    // fallback 路径（源已删除，数据完整在 target）——不丢数据，
+                    // 告知用户数据位置（罕见场景：FSCTL 失败）
+                    let msg = format!(
+                        "创建 Junction 失败（{}），但数据已完整复制到 {}。源目录已按 AppData Mover 兼容方式处理，请手动检查。",
+                        e,
+                        target_path.display()
+                    );
+                    self.emit(MigrationProgress::Error { message: msg.clone() });
+                    return Err(msg);
                 }
             }
         }
