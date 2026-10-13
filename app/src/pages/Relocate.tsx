@@ -22,6 +22,11 @@ function fmtTime(ts: number): string {
   }
 }
 
+/** 剥掉 long_path 的 \\?\ 前缀（历史记录存的是转换后路径，展示需还原） */
+function stripUnc(p: string): string {
+  return p.startsWith("\\\\?\\") ? p.slice(4) : p;
+}
+
 type ProgressEvent = {
   type: string;
   source?: string;
@@ -96,7 +101,8 @@ export default function Relocate() {
           addLog("已取消");
           break;
         case "done":
-          addLog(`✓ 迁移完成，共释放 ${fmt(p.totalFreed ?? 0)}`);
+          // 双兼容：新字段 totalFreed，旧字段 freed（防版本错配显示 0）
+          addLog(`✓ 迁移完成，共释放 ${fmt(p.totalFreed ?? p.freed ?? 0)}`);
           break;
       }
     }).then((un) => { unlistenRef.current = un; });
@@ -175,6 +181,7 @@ export default function Relocate() {
         concurrency,
       );
       setHistory(await api_relocate.list_migration_history());
+      setPhase("ready"); // 迁移完成复位状态（否则卡在"迁移中 0%"）
     } catch (e: any) {
       setError(e?.message ?? String(e));
       setPhase("error");
@@ -390,31 +397,37 @@ export default function Relocate() {
               </div>
             )}
 
-            {/* 扫描结果列表 */}
+            {/* 扫描结果列表（格式对齐 AppData Mover：名称 (大小) [来源] 路径） */}
             {targets.length > 0 && (
               <div className="space-y-0.5">
-                {targets.map((t) => (
-                  <label
-                    key={t.path}
-                    className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-[var(--color-surface-hover)] ${selected.has(t.path) ? "bg-[var(--color-primary-soft)]" : ""}`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selected.has(t.path)}
-                      onChange={() => toggleSelect(t.path)}
-                      disabled={migrating || t.isJunction}
-                      className="h-3.5 w-3.5 accent-[var(--color-primary)]"
-                    />
-                    {t.isJunction
-                      ? <FolderInput size={14} className="shrink-0 text-[var(--color-caution)]" />
-                      : <Folder size={14} className="shrink-0 text-[var(--color-primary)]" />}
-                    <span className="w-48 shrink-0 truncate text-sm font-medium">{t.label}</span>
-                    <span className="flex-1 truncate font-mono text-xs text-[var(--color-text-secondary)]" title={t.path}>{t.path}</span>
-                    {t.isJunction
-                      ? <span className="shrink-0 text-xs text-[var(--color-caution)]">已是链接</span>
-                      : <span className="shrink-0 text-sm tabular-nums text-[var(--color-text-secondary)]">{fmt(t.size)}</span>}
-                  </label>
-                ))}
+                {targets.map((t) => {
+                  const folderName = t.path.split(/[\\/]/).filter(Boolean).pop() ?? t.label;
+                  return (
+                    <label
+                      key={t.path}
+                      className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-[var(--color-surface-hover)] ${selected.has(t.path) ? "bg-[var(--color-primary-soft)]" : ""}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selected.has(t.path)}
+                        onChange={() => toggleSelect(t.path)}
+                        disabled={migrating || t.isJunction}
+                        className="h-3.5 w-3.5 accent-[var(--color-primary)]"
+                      />
+                      {t.isJunction
+                        ? <FolderInput size={14} className="shrink-0 text-[var(--color-caution)]" />
+                        : <Folder size={14} className="shrink-0 text-[var(--color-primary)]" />}
+                      <span className="shrink-0 font-medium text-[var(--color-primary)]">
+                        {folderName} ({fmt(t.size)})
+                      </span>
+                      <span className="shrink-0 rounded bg-[var(--color-surface-hover)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-secondary)]">
+                        [{t.label}]
+                      </span>
+                      <span className="flex-1 truncate font-mono text-xs text-[var(--color-text-secondary)]" title={t.path}>{t.path}</span>
+                      {t.isJunction && <span className="shrink-0 text-xs text-[var(--color-caution)]">已是链接</span>}
+                    </label>
+                  );
+                })}
               </div>
             )}
 
@@ -476,7 +489,7 @@ export default function Relocate() {
                 <div className="flex-1">
                   <div className="text-sm font-medium">{r.name}</div>
                   <div className="truncate font-mono text-xs text-[var(--color-text-secondary)]">
-                    {r.sourcePath} → {r.targetPath}
+                    {stripUnc(r.sourcePath)} → {stripUnc(r.targetPath)}
                   </div>
                 </div>
                 <span className="shrink-0 text-xs tabular-nums text-[var(--color-text-secondary)]">

@@ -229,7 +229,16 @@ pub fn remove_migration_record(app: AppHandle, record_id: String) -> Result<(), 
 /// 读取迁移配置
 #[tauri::command]
 pub fn get_relocate_config(app: AppHandle) -> Result<RelocateConfig, String> {
-    Ok(config::load_config(&app))
+    let mut cfg = config::load_config(&app);
+    // 预置扫描源强制启用（对齐 AppData Mover：5 组默认全勾，含 Program
+    // Files 系——否则扫描结果缺 WindowsApps 等大项，用户感知"结果不一样"）
+    let defaults = crate::relocate::scanner::default_scan_sources();
+    for s in cfg.scan_sources.iter_mut() {
+        if defaults.iter().any(|d| d.path == s.path) {
+            s.enabled = true;
+        }
+    }
+    Ok(cfg)
 }
 
 /// 查询目标盘剩余空间（用户可用字节数）
