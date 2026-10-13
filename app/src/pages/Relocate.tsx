@@ -42,7 +42,7 @@ type ProgressEvent = {
 type Phase = "idle" | "scanning" | "ready" | "migrating" | "error";
 
 export default function Relocate() {
-  const [tab, setTab] = useState<"scan" | "history">("scan");
+  const [tab, setTab] = useState<"scan" | "history" | "logs">("scan");
   const [config, setConfig] = useState<RelocateConfig | null>(null);
   const [targets, setTargets] = useState<RelocateTarget[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -256,6 +256,12 @@ export default function Relocate() {
             >
               迁移记录
             </button>
+            <button
+              onClick={() => setTab("logs")}
+              className={`rounded-lg px-3 py-1 text-sm font-medium ${tab === "logs" ? "bg-[var(--color-primary)] text-white" : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"}`}
+            >
+              日志
+            </button>
           </div>
         </div>
       </div>
@@ -294,6 +300,17 @@ export default function Relocate() {
             <div className="mb-4 text-xs text-[var(--color-text-secondary)]">
               使用步骤：1 扫描大文件夹 → 2 勾选目录 → 3 执行迁移
             </div>
+            {/* 扫描进度条（扫描中显示 indeterminate 动画） */}
+            {phase === "scanning" && (
+              <div className="mb-4">
+                <div className="mb-1 text-xs text-[var(--color-text-secondary)]">
+                  正在扫描大文件夹（MFT 快路径，首次约 10-25 秒）…
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-[var(--color-surface-hover)]">
+                  <div className="h-full w-1/3 animate-pulse rounded-full bg-[var(--color-primary)]" />
+                </div>
+              </div>
+            )}
 
             {/* 目标根目录单行 */}
             <div className="mb-3 flex items-center gap-2 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-2">
@@ -464,16 +481,17 @@ export default function Relocate() {
                 </div>
               </div>
             )}
-
-            {/* 迁移日志 */}
-            {logs.length > 0 && (
-              <div className="mt-4 max-h-36 overflow-y-auto rounded-lg bg-[var(--color-surface)] p-3 font-mono text-xs">
-                {logs.map((line, i) => (
-                  <div key={i} className="py-0.5">{line}</div>
-                ))}
-              </div>
-            )}
           </>
+        ) : tab === "logs" ? (
+          /* 日志 tab */
+          <div className="rounded-lg bg-[var(--color-surface)] p-3 font-mono text-xs">
+            {logs.length === 0 && (
+              <div className="py-8 text-center text-[var(--color-text-secondary)]">暂无日志</div>
+            )}
+            {logs.map((line, i) => (
+              <div key={i} className="py-0.5">{line}</div>
+            ))}
+          </div>
         ) : (
           /* 迁移记录 tab */
           <div className="space-y-1">

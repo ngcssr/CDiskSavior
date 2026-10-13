@@ -22,12 +22,63 @@ struct TaskHandle {
     control: Arc<AtomicU8>,
 }
 
-/// 扫描可迁移目标——async：遍历 AppData 可能较慢
+/// 扫描可迁移目标——MFT 快路径（树聚合，秒级）+ walkdir 回退
 #[tauri::command]
 pub async fn scan_relocate_targets(app: AppHandle) -> Result<Vec<RelocateTarget>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let cfg = config::load_config(&app);
-        scanner::scan_large_folders(&cfg.scan_sources, None)
+        let _ = &app;
+
+        // 收集涉及的盘符树：DRIVE_TREE_CACHE 命中秒回；未命中且提权时
+        // 进程内 MFT 单遍（11-25s，与磁盘透视共用缓存体系）
+        let mut trees: std::collections::HashMap<char, crate::scan::TreeNode> =
+            std::collections::HashMap::new();
+        let letters: std::collections::HashSet<char> = cfg
+            .scan_sources
+            .iter()
+            .filter(|s| s.enabled)
+            .filter_map(|s| s.path.chars().next())
+            .filter(|c| c.is_ascii_alphabetic())
+            .collect();
+        for letter in letters {
+            let root = format!("{}:\\", letter);
+            let tree = crate::commands::try_cached_tree(&root).or_else(|| {
+                if crate::lightc_mft::is_elevated() && crate::lightc_mft::mft_available(letter) {
+                    crate::scan_log(&format!("relocate-scan MFT build root={}", root));
+                    crate::mft_scan::scan_mft(&root, |_, _, _, _| {})
+                        .ok()
+                        .and_then(|t| serde_json::to_value(&t).ok())
+                        .and_then(|v| serde_json::from_value::<crate::scan::TreeNode>(v).ok())
+                } else {
+                    None
+                }
+            });
+            if let Some(t) = tree {
+                trees.insert(letter, t);
+            }
+        }
+
+        // MFT 快路径
+        let mut targets = scanner::scan_large_folders_from_tree(&cfg.scan_sources, &trees, None);
+
+        // 回退：无树的源走 walkdir 慢路径
+        let missing: Vec<&crate::relocate::scanner::ScanSource> = cfg
+            .scan_sources
+            .iter()
+            .filter(|s| {
+                s.enabled
+                    && !trees.contains_key(&s.path.chars().next().unwrap_or('\0'))
+            })
+            .collect();
+        if !missing.is_empty() {
+            let refs: Vec<crate::relocate::scanner::ScanSource> =
+                missing.iter().map(|s| (*s).clone()).collect();
+            let extra = scanner::scan_large_folders(&refs, None);
+            targets.extend(extra);
+        }
+
+        targets.sort_by(|a, b| b.size.cmp(&a.size));
+        targets
     })
     .await
     .map_err(|e| format!("扫描失败: {}", e))

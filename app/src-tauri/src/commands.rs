@@ -75,6 +75,16 @@ fn find_subtree(node: &crate::scan::TreeNode, target: &str) -> Option<crate::sca
     None
 }
 
+/// 供空间腾挪扫描复用：从磁盘透视的 MFT 树缓存中取子树（零耗时）
+pub fn try_cached_tree(root: &str) -> Option<crate::scan::TreeNode> {
+    if let Ok(guard) = DRIVE_TREE_CACHE.lock() {
+        if let Some((_, tree)) = guard.as_ref() {
+            return find_subtree(tree, root);
+        }
+    }
+    None
+}
+
 #[tauri::command]
 pub async fn scan_drive(
     app: tauri::AppHandle,
