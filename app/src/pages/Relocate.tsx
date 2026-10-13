@@ -345,18 +345,20 @@ export default function Relocate() {
             <div className="mb-4 text-xs text-[var(--color-text-secondary)]">
               使用步骤：1 扫描大文件夹 → 2 勾选目录 → 3 执行迁移
             </div>
-            {/* 扫描进度条（真实百分比，来自 MFT 扫描进度事件） */}
+            {/* 扫描进度条（真实百分比，来自 MFT 扫描进度事件，全宽） */}
             {phase === "scanning" && (
               <div className="mb-4">
-                <div className="mb-1 flex justify-between text-xs text-[var(--color-text-secondary)]">
-                  <span>{scanProgress?.phase ?? "正在扫描大文件夹…"}</span>
-                  <span className="tabular-nums">{(scanProgress?.percent ?? 0).toFixed(0)}%</span>
+                <div className="mb-1 flex items-center gap-3">
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--color-surface-hover)]">
+                    <div
+                      className="h-full rounded-full bg-[var(--color-primary)] transition-all"
+                      style={{ width: `${Math.min(scanProgress?.percent ?? 0, 100)}%` }}
+                    />
+                  </div>
+                  <span className="shrink-0 text-xs tabular-nums">{(scanProgress?.percent ?? 0).toFixed(0)}%</span>
                 </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-[var(--color-surface-hover)]">
-                  <div
-                    className="h-full rounded-full bg-[var(--color-primary)] transition-all"
-                    style={{ width: `${Math.min(scanProgress?.percent ?? 0, 100)}%` }}
-                  />
+                <div className="text-xs text-[var(--color-text-secondary)]">
+                  {scanProgress?.phase ?? "正在扫描大文件夹…"}
                 </div>
               </div>
             )}
@@ -463,11 +465,11 @@ export default function Relocate() {
               </div>
             )}
 
-            {/* 迁移进度（AppData Mover 式：细条+文字行，位于结果列表上方） */}
+            {/* 迁移进度（AppData Mover 式：细条+文字行，位于结果列表上方，全宽） */}
             {migrating && (
               <div className="mb-3">
-                <div className="mb-1 flex items-center gap-2">
-                  <div className="h-4 w-48 overflow-hidden rounded bg-[var(--color-surface-hover)]">
+                <div className="mb-1 flex items-center gap-3">
+                  <div className="h-4 flex-1 overflow-hidden rounded bg-[var(--color-surface-hover)]">
                     {progress?.bytesTotal === 0 ? (
                       <div className="h-full w-1/3 animate-pulse rounded bg-[var(--color-primary)]" />
                     ) : (
@@ -477,7 +479,7 @@ export default function Relocate() {
                       />
                     )}
                   </div>
-                  <span className="text-sm font-medium tabular-nums">
+                  <span className="shrink-0 text-sm font-medium tabular-nums">
                     {progress?.bytesTotal === 0 ? "…" : `${progressPct.toFixed(0)}%`}
                   </span>
                 </div>
@@ -578,11 +580,11 @@ export default function Relocate() {
                     <Trash2 size={14} />
                   </button>
                 </div>
-                {/* 回滚真实进度条（该记录回滚中） */}
+                {/* 回滚真实进度条（该记录回滚中，全宽） */}
                 {restoreProgress?.id === r.id && (
                   <div className="mb-1 mt-1 px-3">
-                    <div className="mb-0.5 flex items-center gap-2">
-                      <div className="h-3 w-48 overflow-hidden rounded bg-[var(--color-surface-hover)]">
+                    <div className="mb-0.5 flex items-center gap-3">
+                      <div className="h-3 flex-1 overflow-hidden rounded bg-[var(--color-surface-hover)]">
                         <div
                           className="h-full rounded bg-[var(--color-primary)] transition-all"
                           style={{
@@ -592,11 +594,16 @@ export default function Relocate() {
                           }}
                         />
                       </div>
-                      <span className="text-xs tabular-nums text-[var(--color-text-secondary)]">
+                      <span className="shrink-0 text-xs tabular-nums text-[var(--color-text-secondary)]">
                         {restoreProgress.bytesTotal > 0
-                          ? `${((restoreProgress.bytesDone / restoreProgress.bytesTotal) * 100).toFixed(0)}% · ${fmt(restoreProgress.bytesDone)}/${fmt(restoreProgress.bytesTotal)} · ${fmt(restoreProgress.speedBps)}/s`
-                          : "计算大小中…"}
+                          ? `${((restoreProgress.bytesDone / restoreProgress.bytesTotal) * 100).toFixed(0)}%`
+                          : "…"}
                       </span>
+                    </div>
+                    <div className="text-xs tabular-nums text-[var(--color-text-secondary)]">
+                      {restoreProgress.bytesTotal > 0
+                        ? `${fmt(restoreProgress.bytesDone)}/${fmt(restoreProgress.bytesTotal)} · ${fmt(restoreProgress.speedBps)}/s`
+                        : "计算大小中…"}
                     </div>
                   </div>
                 )}
