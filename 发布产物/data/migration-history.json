@@ -1,1 +1,12 @@
-[]
+[
+  {
+    "id": "cecdf645-6974-422b-a108-916dc52549dd",
+    "name": "QQ",
+    "sourcePath": "C:\\Users\\Administrator\\AppData\\Roaming\\QQ",
+    "targetPath": "\\\\?\\E:\\Yugongyipan\\Roaming\\QQ",
+    "sizeBytes": 145969411,
+    "timestamp": 1791795548,
+    "batchId": "5416683f-1bff-453d-882d-ae568b9eb7a2",
+    "batchTimestamp": 1791795548
+  }
+]

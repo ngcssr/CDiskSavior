@@ -56,6 +56,7 @@ pub async fn start_migration(
     sources: Vec<String>,
     target_root: String,
     kill_pids: Vec<u32>,
+    concurrency: u32,
 ) -> Result<serde_json::Value, String> {
     // R9: target_root 校验
     match crate::relocate::validate::validate_target_root(std::path::Path::new(&target_root)) {
@@ -81,7 +82,7 @@ pub async fn start_migration(
     let result = tauri::async_runtime::spawn_blocking(move || {
         let history = HistoryManager::new(&app2);
         let history = history.ok_or("无法初始化迁移历史")?;
-        task.run(sources, target_root, kill_pids, &history)
+        task.run(sources, target_root, kill_pids, concurrency, &history)
     })
     .await
     .map_err(|e| format!("迁移任务失败: {}", e))?;

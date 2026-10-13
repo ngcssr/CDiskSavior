@@ -16,7 +16,7 @@ function fmt(bytes: number): string {
 
 function fmtTime(ts: number): string {
   try {
-    return new Date(ts).toLocaleString("zh-CN", { hour12: false });
+    return new Date(ts * 1000).toLocaleString("zh-CN", { hour12: false });
   } catch {
     return String(ts);
   }
@@ -26,6 +26,7 @@ type ProgressEvent = {
   type: string;
   source?: string;
   freed?: number;
+  totalFreed?: number;
   bytesDone?: number;
   bytesTotal?: number;
   speedBps?: number;
@@ -47,6 +48,7 @@ export default function Relocate() {
   const [error, setError] = useState<string | null>(null);
   const [targetFree, setTargetFree] = useState<number | null>(null);
   const [autoKill, setAutoKill] = useState(false);
+  const [concurrency, setConcurrency] = useState(6);
   const unlistenRef = useRef<UnlistenFn | null>(null);
 
   const addLog = (msg: string) => setLogs((l) => [...l.slice(-50), msg]);
@@ -94,7 +96,7 @@ export default function Relocate() {
           addLog("已取消");
           break;
         case "done":
-          addLog(`✓ 迁移完成，共释放 ${fmt(p.freed ?? 0)}`);
+          addLog(`✓ 迁移完成，共释放 ${fmt(p.totalFreed ?? 0)}`);
           break;
       }
     }).then((un) => { unlistenRef.current = un; });
@@ -169,7 +171,8 @@ export default function Relocate() {
       await api_relocate.start_migration(
         Array.from(selected),
         config.targetRoot,
-        [], // 占用进程已在上方自动结束
+        [],
+        concurrency,
       );
       setHistory(await api_relocate.list_migration_history());
     } catch (e: any) {
@@ -360,16 +363,30 @@ export default function Relocate() {
                     </div>
                   ))}
                 </div>
-                {/* 选项行：自动结束占用进程 */}
-                <label className="mt-2 flex cursor-pointer items-center gap-2 px-2 py-1 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={autoKill}
-                    onChange={(e) => setAutoKill(e.target.checked)}
-                    className="h-3.5 w-3.5 accent-[var(--color-primary)]"
-                  />
-                  自动结束占用进程（慎用）
-                </label>
+                {/* 选项行：自动结束占用进程 + 并发传输 */}
+                <div className="mt-2 flex items-center gap-4 px-2 py-1 text-sm">
+                  <label className="flex cursor-pointer items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={autoKill}
+                      onChange={(e) => setAutoKill(e.target.checked)}
+                      className="h-3.5 w-3.5 accent-[var(--color-primary)]"
+                    />
+                    自动结束占用进程（慎用）
+                  </label>
+                  <label className="flex items-center gap-2 text-[var(--color-text-secondary)]">
+                    并发传输
+                    <input
+                      type="range"
+                      min={1}
+                      max={16}
+                      value={concurrency}
+                      onChange={(e) => setConcurrency(Number(e.target.value))}
+                      className="w-24 accent-[var(--color-primary)]"
+                    />
+                    <span className="w-6 tabular-nums">{concurrency}</span>
+                  </label>
+                </div>
               </div>
             )}
 

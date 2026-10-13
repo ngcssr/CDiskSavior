@@ -95,8 +95,8 @@ export const api_relocate = {
   scan_relocate_targets: () => invoke<RelocateTarget[]>("scan_relocate_targets"),
   list_locking_processes: (p: string) => invoke<LockingProcess[]>("list_locking_processes", { path: p }),
   kill_locking_process: (pid: number) => invoke<void>("kill_locking_process", { pid }),
-  start_migration: (sources: string[], targetRoot: string, killPids: number[]) =>
-    invoke<{ freed: number; records: MigrationRecord[] }>("start_migration", { sources, targetRoot, killPids }),
+  start_migration: (sources: string[], targetRoot: string, killPids: number[], concurrency: number) =>
+    invoke<{ freed: number; records: MigrationRecord[] }>("start_migration", { sources, targetRoot, killPids, concurrency }),
   pause_migration: () => invoke<void>("pause_migration"),
   resume_migration: () => invoke<void>("resume_migration"),
   cancel_migration: () => invoke<void>("cancel_migration"),

@@ -64,6 +64,7 @@ impl MigrationTask {
         sources: Vec<String>,
         target_root: String,
         kill_pids: Vec<u32>,
+        concurrency: u32,
         history: &crate::relocate::history::HistoryManager,
     ) -> Result<(u64, Vec<MigrationRecord>), String> {
         // 全局写锁（C1 互斥）
@@ -146,13 +147,19 @@ impl MigrationTask {
                 &target_partial,
                 source_size,
                 &kill_pids,
+                concurrency,
             ) {
                 // V12: 取消时清理 .partial
                 let _ = std::fs::remove_dir_all(&target_partial);
+                let friendly = if e.contains("os error 32") || e.contains("os error 33") || e.contains("os error 5") {
+                    format!("{}（文件被占用——请关闭相关软件后重试，或勾选「自动结束占用进程」）", e)
+                } else {
+                    e
+                };
                 self.emit(MigrationProgress::Error {
-                    message: format!("复制失败（{}）: {}", source_str, e),
+                    message: format!("复制失败（{}）: {}", source_str, friendly),
                 });
-                return Err(e);
+                return Err(friendly);
             }
 
             // 重命名 .partial → target_path（原子，同卷）
@@ -257,94 +264,125 @@ impl MigrationTask {
         Ok((total_freed, records))
     }
 
-    /// 复制目录树（支持暂停/取消/进度回调）
+    /// 复制目录树（支持暂停/取消/进度回调/并发传输）
     ///
     /// V6: 跳过 reparse point（junction/symlink），但收集到 skipped 列表
     /// V7: 保留 mtime（P2 阶段；ACL/硬链接留后续）
+    /// 并发传输：先遍历收集文件列表，再用 rayon 并行复制（concurrency 限制）
     fn copy_dir(
         &self,
         src: &Path,
         dst: &Path,
         total_size: u64,
         _kill_pids: &[u32],
+        concurrency: u32,
     ) -> Result<(), String> {
         std::fs::create_dir_all(dst).map_err(|e| format!("创建目标目录失败: {}", e))?;
 
-        let mut bytes_done = 0u64;
+        // 1. 先遍历收集所有文件 + 建目录树
+        let mut files: Vec<(std::path::PathBuf, std::path::PathBuf, u64)> = Vec::new();
         let mut skipped_reparse: Vec<String> = Vec::new();
-        let t0 = Instant::now();
-
         for entry in walkdir::WalkDir::new(src)
-            .follow_links(false) // 不跟随链接/junction
+            .follow_links(false)
             .into_iter()
             .flatten()
         {
-            // 检查暂停/取消
-            self.check_control().map_err(|e| {
-                // V12: 取消时清理 .partial 由调用方处理
-                e
-            })?;
-
+            self.check_control()?;
             let src_path = entry.path();
-            let rel = src_path.strip_prefix(src).unwrap_or(src_path);
-            let dst_path = dst.join(rel);
-
-            // V6: reparse point 检测（用属性位，不用 is_symlink）
             if junction::is_junction(src_path) {
                 skipped_reparse.push(src_path.to_string_lossy().to_string());
                 continue;
             }
-
+            let rel = src_path.strip_prefix(src).unwrap_or(src_path);
+            let dst_path = dst.join(rel);
             if entry.file_type().is_dir() {
                 std::fs::create_dir_all(&dst_path)
                     .map_err(|e| format!("创建子目录失败 {}: {}", dst_path.display(), e))?;
             } else if entry.file_type().is_file() {
                 let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
-
-                // 复制（带重试）
-                let mut last_err: Option<String> = None;
-                for attempt in 0..3u32 {
-                    match self.copy_file(&src_path, &dst_path) {
-                        Ok(()) => {
-                            last_err = None;
-                            break;
-                        }
-                        Err(e) => {
-                            let raw = std::io::Error::raw_os_error(&e);
-                            let locked = raw == Some(32) || raw == Some(33) || raw == Some(5);
-                            if locked {
-                                last_err = Some(e.to_string());
-                                if attempt < 2 {
-                                    std::thread::sleep(std::time::Duration::from_millis(300));
-                                    continue;
-                                }
-                                // 锁定文件：不跳过（V6 要求明示），报错
-                                break;
-                            }
-                            return Err(format!("复制失败 {}: {}", src_path.display(), e));
-                        }
-                    }
-                }
-                if let Some(e) = last_err {
-                    // 不跳过锁定文件——报错，让用户决定是否 kill 进程重试
-                    return Err(format!(
-                        "文件被占用无法复制（已重试 3 次）: {} — 错误: {}",
-                        src_path.display(),
-                        e
-                    ));
-                }
-
-                bytes_done += size;
-                // 进度事件（节流：每 4MB 或每个文件至少一次）
-                let elapsed = t0.elapsed().as_secs_f64().max(0.001);
-                let speed = (bytes_done as f64 / elapsed) as u64;
-                self.emit(MigrationProgress::Progress {
-                    source: src.to_string_lossy().to_string(),
-                    bytes_done,
-                    bytes_total: total_size,
-                    speed_bps: speed,
-                });
+                files.push((src_path.to_path_buf(), dst_path, size));
             }
+        }
+
+        // 2. 并行复制文件（concurrency 限制并发数）
+        use std::sync::atomic::{AtomicU64, Ordering as AOrd};
+        let bytes_done = AtomicU64::new(0);
+        let active = std::sync::atomic::AtomicUsize::new(0);
+        let t0 = Instant::now();
+        let source_name = src.to_string_lossy().to_string();
+        let max_threads = concurrency.max(1) as usize;
+
+        // 用 thread::scope + 滑动窗口控制并发（不依赖全局 rayon 线程池）
+        // active/bytes_done 声明在 scope 外（'env 可被 spawn 线程借用），
+        // scope 内 shadow 为引用（&AtomicUsize 是 Copy，spawn move 引用无害）
+        let errors: Vec<String> = std::thread::scope(|s| {
+            let active = &active;
+            let bytes_done = &bytes_done;
+            let mut handles: Vec<_> = Vec::new();
+            for (sp, dp, sz) in &files {
+                // 检查取消
+                if let Err(e) = self.check_control() {
+                    break;
+                }
+                // 等并发空位
+                while active.load(AOrd::Acquire) >= max_threads {
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                    if self.check_control().is_err() { break; }
+                }
+                if self.check_control().is_err() { break; }
+                active.fetch_add(1, AOrd::AcqRel);
+
+                let sp = sp.clone();
+                let dp = dp.clone();
+                let sz = *sz;
+                let sn = source_name.clone();
+                let this_app = self.app.clone();
+                let h = s.spawn(move || {
+                    let result = (|| -> Result<(), String> {
+                        for attempt in 0..3u32 {
+                            match self.copy_file(&sp, &dp) {
+                                Ok(()) => return Ok(()),
+                                Err(e) => {
+                                    let raw = std::io::Error::raw_os_error(&e);
+                                    let locked = raw == Some(32) || raw == Some(33) || raw == Some(5);
+                                    if locked && attempt < 2 {
+                                        std::thread::sleep(std::time::Duration::from_millis(300));
+                                        continue;
+                                    }
+                                    return Err(format!("{}: {}", sp.display(), e));
+                                }
+                            }
+                        }
+                        Ok(())
+                    })();
+                    if result.is_ok() {
+                        let done = bytes_done.fetch_add(sz, AOrd::AcqRel) + sz;
+                        let elapsed = t0.elapsed().as_secs_f64().max(0.001);
+                        let speed = (done as f64 / elapsed) as u64;
+                        let _ = this_app.emit("migration-progress", MigrationProgress::Progress {
+                            source: sn,
+                            bytes_done: done,
+                            bytes_total: total_size,
+                            speed_bps: speed,
+                        });
+                    }
+                    active.fetch_sub(1, AOrd::AcqRel);
+                    result
+                });
+                handles.push(h);
+            }
+            // 收集结果
+            let mut errs: Vec<String> = Vec::new();
+            for h in handles {
+                if let Ok(Err(e)) = h.join() {
+                    errs.push(e);
+                }
+            }
+            errs
+        });
+
+        if !errors.is_empty() {
+            return Err(format!("文件被占用无法复制（已重试）: {}", errors.join("; ")));
         }
 
         // V6: 跳过的 reparse point 必须明示
