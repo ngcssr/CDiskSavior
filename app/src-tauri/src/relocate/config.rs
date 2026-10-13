@@ -71,11 +71,21 @@ pub fn load_config(app: &tauri::AppHandle) -> RelocateConfig {
 /// 旧配置合并新增默认源（保留用户已有源的启用状态）：
 /// v56 起默认源 2→5 组，老配置文件缺 Program Files 系源时补齐。
 fn merge_new_default_sources(cfg: &mut RelocateConfig) {
-    let existing: std::collections::HashSet<String> =
-        cfg.scan_sources.iter().map(|s| s.path.to_lowercase()).collect();
     for src in super::scanner::default_scan_sources() {
-        if !existing.contains(&src.path.to_lowercase()) {
-            cfg.scan_sources.push(src);
+        match cfg
+            .scan_sources
+            .iter_mut()
+            .find(|s| s.path.to_lowercase() == src.path.to_lowercase())
+        {
+            Some(ex) => {
+                // 预置源强制启用（对齐 AppData Mover：5 组默认全勾）。
+                // 旧配置里 enabled=false 的残留在此统一纠正——否则扫描
+                // 永远缺 Program Files 系大项（WindowsApps 等）。
+                ex.enabled = true;
+            }
+            None => {
+                cfg.scan_sources.push(src);
+            }
         }
     }
 }

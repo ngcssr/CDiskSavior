@@ -38,9 +38,9 @@ pub fn default_scan_sources() -> Vec<ScanSource> {
             });
         }
     }
-    // 固定路径三组（disk-butler 成品 config.json 同款）：Program Files
-    // 是空间大户（本机 22.3+9.9GB），迁移可行性 disk-butler 已验证；
-    // 高风险，默认关闭由用户显式开启。
+    // 固定路径三组（AppData Mover 同款默认全勾）：Program Files
+    // 是空间大户（本机 22.3+9.9GB）。迁移高风险由 UI 提示承担，
+    // 默认关闭会让扫描结果缺 WindowsApps 等大项（用户已反馈）。
     for (path, label, subdir) in [
         (r"C:\Program Files", "Program Files", "Program Files"),
         (r"C:\Program Files (x86)", "Program Files (x86)", "Program Files (x86)"),
@@ -48,7 +48,7 @@ pub fn default_scan_sources() -> Vec<ScanSource> {
     ] {
         if std::path::Path::new(path).is_dir() {
             sources.push(ScanSource {
-                enabled: false,
+                enabled: true,
                 label: label.into(),
                 path: path.into(),
                 target_subdir: subdir.into(),
