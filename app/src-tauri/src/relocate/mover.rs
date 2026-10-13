@@ -219,12 +219,17 @@ impl MigrationTask {
                         log::warn!("清理备份失败（不致命）: {}", e);
                     }
 
-                    // V19: 原子写入迁移历史
+                    // V19: 原子写入迁移历史（target_path 存原始路径——
+                    // 不带 \\?\ 前缀，否则回滚 exists 判断异常+UI 显示难看）
+                    let raw_target = {
+                        let raw_root = target_root.trim_end_matches(['\\', '/']);
+                        format!("{}\\{}\\{}", raw_root, target_subdir, folder_name)
+                    };
                     let record = MigrationRecord {
                         id: uuid::Uuid::new_v4().to_string(),
                         name: folder_name.clone(),
                         source_path: source_str.clone(),
-                        target_path: target_path.to_string_lossy().to_string(),
+                        target_path: raw_target,
                         size_bytes: source_size,
                         timestamp: batch_ts,
                         batch_id: Some(batch_id.clone()),

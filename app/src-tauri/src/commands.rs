@@ -519,11 +519,13 @@ pub fn open_logs_folder() -> Result<(), String> {
     Ok(())
 }
 
-/// 在资源管理器中打开任意目录（空间腾挪结果项点击用）
+/// 在资源管理器中打开任意目录（空间腾挪结果项点击用）。
+/// 用 symlink_metadata 判断路径本身存在——迁移后的源目录是
+/// junction，is_dir() 在部分场景解析失败会误报"不存在"
 #[tauri::command]
 pub fn open_folder_in_explorer(path: String) -> Result<(), String> {
     let p = std::path::Path::new(&path);
-    if !p.is_dir() {
+    if p.symlink_metadata().is_err() {
         return Err(format!("目录不存在: {}", path));
     }
     std::process::Command::new("explorer")

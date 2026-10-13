@@ -352,18 +352,64 @@ pub fn save_relocate_config(app: AppHandle, config_value: serde_json::Value) -> 
     config::save_config(&app, &cfg)
 }
 
-/// 递归复制目录（用于回滚的跨卷复制）
+/// 递归复制目录（用于回滚的跨卷复制）——并发版（8 线程滑动窗口），
+/// 单线程回滚大目录要数分钟（用户反馈"AppData Mover 回滚速度非常快"）
 fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<(), String> {
+    use std::sync::atomic::{AtomicUsize, Ordering as AOrd};
     std::fs::create_dir_all(dst).map_err(|e| format!("创建目录失败: {}", e))?;
-    for entry in std::fs::read_dir(src).map_err(|e| format!("读取目录失败: {}", e))? {
-        let entry = entry.map_err(|e| format!("读取条目失败: {}", e))?;
-        let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
-        if src_path.is_dir() {
-            copy_dir_recursive(&src_path, &dst_path)?;
-        } else {
-            std::fs::copy(&src_path, &dst_path).map_err(|e| format!("复制文件失败: {}", e))?;
+
+    // 1. 收集文件 + 建目录树
+    let mut files: Vec<(std::path::PathBuf, std::path::PathBuf)> = Vec::new();
+    for entry in walkdir::WalkDir::new(src)
+        .follow_links(false)
+        .into_iter()
+        .flatten()
+    {
+        let sp = entry.path();
+        if crate::relocate::junction::is_junction(sp) {
+            continue; // 回滚不含链接子项
         }
+        let rel = sp.strip_prefix(src).unwrap_or(sp);
+        let dp = dst.join(rel);
+        if entry.file_type().is_dir() {
+            let _ = std::fs::create_dir_all(&dp);
+        } else if entry.file_type().is_file() {
+            files.push((sp.to_path_buf(), dp));
+        }
+    }
+
+    // 2. 并行复制（滑动窗口 8 并发）
+    let active = AtomicUsize::new(0);
+    let errors: Vec<String> = std::thread::scope(|s| {
+        let active = &active;
+        let mut handles: Vec<_> = Vec::new();
+        for (sp, dp) in &files {
+            while active.load(AOrd::Acquire) >= 8 {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            active.fetch_add(1, AOrd::AcqRel);
+            let sp = sp.clone();
+            let dp = dp.clone();
+            let h = s.spawn(move || {
+                let r = std::fs::copy(&sp, &dp)
+                    .map(|_| ())
+                    .map_err(|e| format!("{}: {}", sp.display(), e));
+                active.fetch_sub(1, AOrd::AcqRel);
+                r
+            });
+            handles.push(h);
+        }
+        let mut errs: Vec<String> = Vec::new();
+        for h in handles {
+            if let Ok(Err(e)) = h.join() {
+                errs.push(e);
+            }
+        }
+        errs
+    });
+
+    if !errors.is_empty() {
+        return Err(format!("复制文件失败: {}", errors.join("; ")));
     }
     Ok(())
 }

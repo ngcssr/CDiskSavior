@@ -3,7 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { api_relocate, api_settings } from "../api/commands";
 import type { RelocateTarget, RelocateConfig, MigrationRecord } from "../api/commands";
 import {
-  HardDriveDownload, RefreshCw, Play, Pause, X, RotateCcw,
+  HardDriveDownload, RefreshCw, X, RotateCcw,
   Folder, AlertTriangle, CheckCircle, Trash2, FolderInput, Plus,
 } from "lucide-react";
 
@@ -55,6 +55,7 @@ export default function Relocate() {
   const [autoKill, setAutoKill] = useState(false);
   const [concurrency, setConcurrency] = useState(6);
   const [scanProgress, setScanProgress] = useState<{ percent: number; phase: string } | null>(null);
+  const [successModal, setSuccessModal] = useState<{ title: string; lines: string[] } | null>(null);
   const scanUnlistenRef = useRef<UnlistenFn | null>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
 
@@ -165,6 +166,7 @@ export default function Relocate() {
     setPhase("migrating");
     setError(null);
     setLogs([]);
+    const t0 = Date.now();
     try {
       if (autoKill) {
         addLog("自动结束占用进程…");
@@ -183,7 +185,7 @@ export default function Relocate() {
         }
         if (killed === 0) addLog("未发现占用进程");
       }
-      await api_relocate.start_migration(
+      const result = await api_relocate.start_migration(
         Array.from(selected),
         config.targetRoot,
         [],
@@ -191,22 +193,45 @@ export default function Relocate() {
       );
       setHistory(await api_relocate.list_migration_history());
       setPhase("ready"); // 迁移完成复位状态（否则卡在"迁移中 0%"）
+      // 迁移成功居中弹窗（AppData Mover 同款：统计+列表）
+      const elapsed = Date.now() - t0;
+      const em = Math.floor(elapsed / 60000);
+      const es = Math.floor((elapsed % 60000) / 1000);
+      const records = (result as any)?.records ?? [];
+      setSuccessModal({
+        title: "迁移成功",
+        lines: [
+          `成功移动 ${records.length}`,
+          `释放了 ${fmt((result as any)?.freed ?? 0)}`,
+          `耗时: ${em}m ${es}s`,
+          "",
+          ...records.map((r: any, i: number) => `${i + 1}. ${r.sourcePath ?? ""}`),
+        ],
+      });
     } catch (e: any) {
       setError(e?.message ?? String(e));
       setPhase("error");
     }
   };
 
-  const pause = () => api_relocate.pause_migration().catch(() => {});
-  const resume = () => api_relocate.resume_migration().catch(() => {});
-  const cancel = () => api_relocate.cancel_migration().catch(() => {});
-
   const restore = async (id: string, force = false) => {
     try {
+      const t0 = Date.now();
       await api_relocate.restore_migration(id, force);
-      addLog(`✓ 已回滚：${id}`);
+      const elapsed = Date.now() - t0;
+      const es = Math.max(1, Math.floor(elapsed / 1000));
+      const rec = history.find((r) => r.id === id);
       setHistory(await api_relocate.list_migration_history());
+      setSuccessModal({
+        title: "回滚成功",
+        lines: [
+          rec?.name ?? id,
+          stripUnc(rec?.sourcePath ?? ""),
+          `耗时: ${es}s`,
+        ],
+      });
       setTab("logs");
+      addLog(`✓ 已回滚：${id}`);
     } catch (e: any) {
       const msg = String(e?.message ?? e);
       if (msg.includes("RESTORE_CONFLICT")) {
@@ -239,6 +264,15 @@ export default function Relocate() {
   const progressPct = progress?.bytesTotal && progress.bytesTotal > 0
     ? Math.min((progress.bytesDone ?? 0) / progress.bytesTotal * 100, 100)
     : 0;
+  // 剩余时间估算：(总量-已传)/速度 → "Xm Ys"
+  const remainingText = (() => {
+    if (!progress?.bytesTotal || !progress.speedBps) return "0s";
+    const remain = progress.bytesTotal - (progress.bytesDone ?? 0);
+    const secs = Math.max(0, Math.round(remain / progress.speedBps));
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return m > 0 ? `${m}m ${s}s` : `${s}s`;
+  })();
 
   return (
     <div className="flex h-full flex-col">
@@ -316,48 +350,6 @@ export default function Relocate() {
                     className="h-full rounded-full bg-[var(--color-primary)] transition-all"
                     style={{ width: `${Math.min(scanProgress?.percent ?? 0, 100)}%` }}
                   />
-                </div>
-              </div>
-            )}
-            {/* 迁移进度条（同一位置：百分比+速度+已传/总量+控制） */}
-            {migrating && (
-              <div className="mb-4 rounded-lg border border-[var(--color-primary)]/30 bg-[var(--color-primary-soft)]/30 p-3">
-                <div className="mb-1 flex justify-between text-xs">
-                  <span className="truncate font-medium">
-                    {progress?.source
-                      ? (progress.bytesTotal === 0
-                          ? `正在分析 ${progress.source.split(/[\\/]/).filter(Boolean).pop() ?? progress.source}…`
-                          : progress.source.split(/[\\/]/).filter(Boolean).pop() ?? progress.source)
-                      : "迁移中…"}
-                  </span>
-                  <span className="tabular-nums">
-                    {progress?.bytesTotal === 0 ? "…" : `${progressPct.toFixed(0)}%`}
-                  </span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-[var(--color-surface-hover)]">
-                  {progress?.bytesTotal === 0 ? (
-                    <div className="h-full w-1/3 animate-pulse rounded-full bg-[var(--color-primary)]" />
-                  ) : (
-                    <div className="h-full rounded-full bg-[var(--color-primary)] transition-all" style={{ width: `${progressPct}%` }} />
-                  )}
-                </div>
-                <div className="mt-1 flex items-center justify-between text-xs text-[var(--color-text-secondary)]">
-                  <span className="tabular-nums">
-                    {progress?.bytesTotal && progress.bytesTotal > 0
-                      ? `${fmt(progress.bytesDone ?? 0)} / ${fmt(progress.bytesTotal)}${progress.speedBps ? ` · ${fmt(progress.speedBps)}/s` : ""}`
-                      : "计算目录大小中"}
-                  </span>
-                  <div className="flex gap-2">
-                    <button onClick={pause} className="flex items-center gap-1 rounded bg-[var(--color-surface-hover)] px-2.5 py-1">
-                      <Pause size={12} /> 暂停
-                    </button>
-                    <button onClick={resume} className="flex items-center gap-1 rounded bg-[var(--color-surface-hover)] px-2.5 py-1">
-                      <Play size={12} /> 继续
-                    </button>
-                    <button onClick={cancel} className="flex items-center gap-1 rounded bg-[var(--color-danger-bg-soft)] px-2.5 py-1 text-[var(--color-danger-text)]">
-                      <X size={12} /> 取消
-                    </button>
-                  </div>
                 </div>
               </div>
             )}
@@ -464,6 +456,24 @@ export default function Relocate() {
               </div>
             )}
 
+            {/* 迁移进度（AppData Mover 式：细条+文字行，位于结果列表上方） */}
+            {migrating && (
+              <div className="mb-3">
+                <div className="mb-1 flex items-center gap-2">
+                  <div className="h-4 w-48 overflow-hidden rounded bg-[var(--color-surface-hover)]">
+                    <div
+                      className="h-full rounded bg-[var(--color-primary)] transition-all"
+                      style={{ width: `${progressPct}%` }}
+                    />
+                  </div>
+                  <span className="text-sm font-medium tabular-nums">{progressPct.toFixed(0)}%</span>
+                </div>
+                <div className="text-xs tabular-nums text-[var(--color-text-secondary)]">
+                  {fmt(progress?.bytesDone ?? 0)}/{fmt(progress?.bytesTotal ?? 0)} 速度: {fmt(progress?.speedBps ?? 0)}/s 剩余: {remainingText}
+                </div>
+              </div>
+            )}
+
             {/* 扫描结果列表（格式对齐 AppData Mover：名称 (大小) [来源] 路径） */}
             {targets.length > 0 && (
               <div className="space-y-0.5">
@@ -557,6 +567,38 @@ export default function Relocate() {
           </div>
         )}
       </div>
+
+      {/* 迁移/回滚成功居中弹窗（AppData Mover 同款） */}
+      {successModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-[440px] rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-5 shadow-2xl">
+            <div className="mb-4 border-b border-[var(--color-line)] pb-3 text-center text-lg font-bold">
+              {successModal.title}
+            </div>
+            <div className="max-h-64 space-y-1 overflow-y-auto text-sm">
+              {successModal.lines.map((line, i) =>
+                line === "" ? (
+                  <div key={i} className="h-2" />
+                ) : /^\d+\./.test(line) ? (
+                  <div key={i} className="break-all font-mono text-xs text-[var(--color-text-secondary)]">
+                    {line}
+                  </div>
+                ) : (
+                  <div key={i}>{line}</div>
+                ),
+              )}
+            </div>
+            <div className="mt-4 flex justify-center">
+              <button
+                onClick={() => setSuccessModal(null)}
+                className="rounded-lg bg-[var(--color-primary)] px-6 py-1.5 text-sm font-medium text-white"
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
