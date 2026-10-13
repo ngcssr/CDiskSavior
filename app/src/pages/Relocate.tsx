@@ -56,7 +56,9 @@ export default function Relocate() {
   const [concurrency, setConcurrency] = useState(6);
   const [scanProgress, setScanProgress] = useState<{ percent: number; phase: string } | null>(null);
   const [successModal, setSuccessModal] = useState<{ title: string; lines: string[] } | null>(null);
+  const [restoreProgress, setRestoreProgress] = useState<{ id: string; bytesDone: number; bytesTotal: number; speedBps: number } | null>(null);
   const scanUnlistenRef = useRef<UnlistenFn | null>(null);
+  const restoreUnlistenRef = useRef<UnlistenFn | null>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
 
   const addLog = (msg: string) => setLogs((l) => [...l.slice(-50), msg]);
@@ -84,6 +86,10 @@ export default function Relocate() {
         setError(e?.message ?? String(e));
       }
     })();
+
+    listen<{ id: string; bytesDone: number; bytesTotal: number; speedBps: number }>("relocate-restore-progress", (e) => {
+      setRestoreProgress(e.payload);
+    }).then((un) => { restoreUnlistenRef.current = un; });
 
     listen<{ percent: number; phase: string }>("relocate-scan-progress", (e) => {
       setScanProgress(e.payload);
@@ -114,7 +120,7 @@ export default function Relocate() {
       }
     }).then((un) => { unlistenRef.current = un; });
 
-    return () => { unlistenRef.current?.(); scanUnlistenRef.current?.(); };
+    return () => { unlistenRef.current?.(); scanUnlistenRef.current?.(); restoreUnlistenRef.current?.(); };
   }, []);
 
   // 扫描
@@ -222,6 +228,7 @@ export default function Relocate() {
       const es = Math.max(1, Math.floor(elapsed / 1000));
       const rec = history.find((r) => r.id === id);
       setHistory(await api_relocate.list_migration_history());
+      setRestoreProgress(null);
       setSuccessModal({
         title: "回滚成功",
         lines: [
@@ -544,32 +551,55 @@ export default function Relocate() {
               <div className="py-8 text-center text-sm text-[var(--color-text-secondary)]">暂无迁移记录</div>
             )}
             {history.map((r) => (
-              <div
-                key={r.id}
-                className="flex items-center gap-3 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-2"
-              >
-                <CheckCircle size={16} className="shrink-0 text-[var(--color-safe)]" />
-                <div className="flex-1">
-                  <div className="text-sm font-medium">{r.name}</div>
-                  <div className="truncate font-mono text-xs text-[var(--color-text-secondary)]">
-                    {stripUnc(r.sourcePath)} → {stripUnc(r.targetPath)}
+              <div key={r.id}>
+                <div className="flex items-center gap-3 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-2">
+                  <CheckCircle size={16} className="shrink-0 text-[var(--color-safe)]" />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium">{r.name}</div>
+                    <div className="truncate font-mono text-xs text-[var(--color-text-secondary)]">
+                      {stripUnc(r.sourcePath)} → {stripUnc(r.targetPath)}
+                    </div>
                   </div>
+                  <span className="shrink-0 text-xs tabular-nums text-[var(--color-text-secondary)]">
+                    {fmt(r.sizeBytes)} · {fmtTime(r.timestamp)}
+                  </span>
+                  <button
+                    onClick={() => restore(r.id)}
+                    disabled={restoreProgress !== null}
+                    className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-[var(--color-primary)] hover:bg-[var(--color-primary-soft)] disabled:opacity-40"
+                  >
+                    <RotateCcw size={12} /> 回滚
+                  </button>
+                  <button
+                    onClick={() => removeRecord(r.id)}
+                    disabled={restoreProgress !== null}
+                    className="shrink-0 rounded-lg p-1 text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] disabled:opacity-40"
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 </div>
-                <span className="shrink-0 text-xs tabular-nums text-[var(--color-text-secondary)]">
-                  {fmt(r.sizeBytes)} · {fmtTime(r.timestamp)}
-                </span>
-                <button
-                  onClick={() => restore(r.id)}
-                  className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-[var(--color-primary)] hover:bg-[var(--color-primary-soft)]"
-                >
-                  <RotateCcw size={12} /> 回滚
-                </button>
-                <button
-                  onClick={() => removeRecord(r.id)}
-                  className="shrink-0 rounded-lg p-1 text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
-                >
-                  <Trash2 size={14} />
-                </button>
+                {/* 回滚真实进度条（该记录回滚中） */}
+                {restoreProgress?.id === r.id && (
+                  <div className="mb-1 mt-1 px-3">
+                    <div className="mb-0.5 flex items-center gap-2">
+                      <div className="h-3 w-48 overflow-hidden rounded bg-[var(--color-surface-hover)]">
+                        <div
+                          className="h-full rounded bg-[var(--color-primary)] transition-all"
+                          style={{
+                            width: restoreProgress.bytesTotal > 0
+                              ? `${Math.min((restoreProgress.bytesDone / restoreProgress.bytesTotal) * 100, 100)}%`
+                              : "0%",
+                          }}
+                        />
+                      </div>
+                      <span className="text-xs tabular-nums text-[var(--color-text-secondary)]">
+                        {restoreProgress.bytesTotal > 0
+                          ? `${((restoreProgress.bytesDone / restoreProgress.bytesTotal) * 100).toFixed(0)}% · ${fmt(restoreProgress.bytesDone)}/${fmt(restoreProgress.bytesTotal)} · ${fmt(restoreProgress.speedBps)}/s`
+                          : "计算大小中…"}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>

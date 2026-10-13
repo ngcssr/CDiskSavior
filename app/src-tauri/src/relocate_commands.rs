@@ -261,7 +261,7 @@ pub async fn restore_migration(app: AppHandle, record_id: String, force: Option<
             return Ok(());
         }
 
-        // 跨卷 → 复制（V13：拼接，不用 with_extension）
+        // 跨卷 → 复制（V13：拼接，不用 with_extension）+ 真实进度事件
         let partial = source
             .parent()
             .unwrap_or(std::path::Path::new("."))
@@ -272,7 +272,40 @@ pub async fn restore_migration(app: AppHandle, record_id: String, force: Option<
         let _ = std::fs::remove_dir_all(&partial);
         std::fs::create_dir_all(&partial).map_err(|e| format!("创建临时还原目录失败: {}", e))?;
 
-        copy_dir_recursive(target, &partial)?;
+        // 回滚进度（真实）：先算总量，复制中分块计数，200ms 节流 emit
+        {
+            use tauri::Emitter;
+            use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AOrd};
+            use std::sync::Arc;
+            let total = crate::relocate::scanner::get_dir_size(target);
+            let _ = app_clone.emit(
+                "relocate-restore-progress",
+                serde_json::json!({ "id": id_clone, "bytesDone": 0, "bytesTotal": total, "speedBps": 0 }),
+            );
+            let counter = Arc::new(AtomicU64::new(0));
+            let stop = Arc::new(AtomicBool::new(false));
+            let prog_app = app_clone.clone();
+            let prog_id = id_clone.clone();
+            let prog_counter = counter.clone();
+            let prog_stop = stop.clone();
+            let emit_thread = std::thread::spawn(move || {
+                let t = std::time::Instant::now();
+                while !prog_stop.load(AOrd::Relaxed) {
+                    let done = prog_counter.load(AOrd::Relaxed);
+                    let elapsed = t.elapsed().as_secs_f64().max(0.001);
+                    let speed = (done as f64 / elapsed) as u64;
+                    let _ = prog_app.emit(
+                        "relocate-restore-progress",
+                        serde_json::json!({ "id": prog_id, "bytesDone": done, "bytesTotal": total, "speedBps": speed }),
+                    );
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                }
+            });
+            let copy_result = copy_dir_recursive(target, &partial, &counter);
+            stop.store(true, AOrd::Relaxed);
+            let _ = emit_thread.join();
+            copy_result?;
+        }
         std::fs::rename(&partial, source)
             .map_err(|e| format!("整理被还原目录失败: {}", e))?;
         let _ = std::fs::remove_dir_all(target);
@@ -352,9 +385,14 @@ pub fn save_relocate_config(app: AppHandle, config_value: serde_json::Value) -> 
     config::save_config(&app, &cfg)
 }
 
-/// 递归复制目录（用于回滚的跨卷复制）——并发版（8 线程滑动窗口），
-/// 单线程回滚大目录要数分钟（用户反馈"AppData Mover 回滚速度非常快"）
-fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<(), String> {
+/// 递归复制目录（用于回滚的跨卷复制）——并发版（8 线程滑动窗口）
+/// + 分块计数真实进度（counter 由调用方传入，进度线程节流 emit）
+fn copy_dir_recursive(
+    src: &std::path::Path,
+    dst: &std::path::Path,
+    counter: &std::sync::Arc<std::sync::atomic::AtomicU64>,
+) -> Result<(), String> {
+    use std::io::{BufReader, BufWriter, Read, Write};
     use std::sync::atomic::{AtomicUsize, Ordering as AOrd};
     std::fs::create_dir_all(dst).map_err(|e| format!("创建目录失败: {}", e))?;
 
@@ -378,7 +416,7 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<()
         }
     }
 
-    // 2. 并行复制（滑动窗口 8 并发）
+    // 2. 并行复制（滑动窗口 8 并发，分块计数）
     let active = AtomicUsize::new(0);
     let errors: Vec<String> = std::thread::scope(|s| {
         let active = &active;
@@ -391,9 +429,26 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<()
             let sp = sp.clone();
             let dp = dp.clone();
             let h = s.spawn(move || {
-                let r = std::fs::copy(&sp, &dp)
-                    .map(|_| ())
-                    .map_err(|e| format!("{}: {}", sp.display(), e));
+                // 分块复制（1MB 块，每块计数）
+                let r = (|| -> Result<(), String> {
+                    let open_err = |e: std::io::Error| format!("{}: {}", sp.display(), e);
+                    let mut reader = BufReader::with_capacity(1024 * 1024, std::fs::File::open(&sp).map_err(open_err)?);
+                    let mut writer = BufWriter::with_capacity(1024 * 1024, std::fs::File::create(&dp).map_err(open_err)?);
+                    let mut buffer = vec![0u8; 1024 * 1024];
+                    loop {
+                        let n = reader.read(&mut buffer).map_err(open_err)?;
+                        if n == 0 { break; }
+                        writer.write_all(&buffer[..n]).map_err(|e| format!("{}: {}", dp.display(), e))?;
+                        counter.fetch_add(n as u64, AOrd::Relaxed);
+                    }
+                    writer.flush().map_err(|e| format!("{}: {}", dp.display(), e))?;
+                    if let Ok(meta) = std::fs::metadata(&sp) {
+                        if let Ok(modified) = meta.modified() {
+                            let _ = filetime::set_file_mtime(&dp, filetime::FileTime::from_system_time(modified));
+                        }
+                    }
+                    Ok(())
+                })();
                 active.fetch_sub(1, AOrd::AcqRel);
                 r
             });

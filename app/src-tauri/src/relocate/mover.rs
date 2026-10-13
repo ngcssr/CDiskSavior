@@ -392,24 +392,65 @@ impl MigrationTask {
             }
         }
 
-        // 2. 并行复制文件（concurrency 限制并发数）
-        use std::sync::atomic::{AtomicU64, Ordering as AOrd};
-        let bytes_done = AtomicU64::new(0);
-        let active = std::sync::atomic::AtomicUsize::new(0);
+        // 2. 并行复制文件（concurrency 限制并发数）+ 分块计数真实进度
+        // 进度机制（对齐源码 copy_file_with_progress 的 1MB 分块 + 适配
+        // Tauri IPC 的 200ms 节流 emit 专用线程）：大文件中途也更新进度，
+        // 小文件风暴不再每文件 emit（治卡顿）
+        use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AOrd};
+        use std::sync::Arc;
+        let bytes_done = Arc::new(AtomicU64::new(0));
+        let stop_emit = Arc::new(AtomicBool::new(false));
         let t0 = Instant::now();
         let source_name = src.to_string_lossy().to_string();
         let max_threads = concurrency.max(1) as usize;
 
+        // 进度线程：每 200ms 读原子计数 emit（真实连续进度，无 IPC 风暴）。
+        // std::thread::spawn 要求 'static → 计数/停止用 Arc clone
+        let prog_app = self.app.clone();
+        let prog_source = source_name.clone();
+        let prog_total = total_size;
+        let prog_counter = bytes_done.clone();
+        let prog_stop = stop_emit.clone();
+        let emit_thread = std::thread::spawn(move || {
+            let t = Instant::now();
+            while !prog_stop.load(AOrd::Relaxed) {
+                let done = prog_counter.load(AOrd::Relaxed);
+                let elapsed = t.elapsed().as_secs_f64().max(0.001);
+                let speed = (done as f64 / elapsed) as u64;
+                let _ = prog_app.emit(
+                    "migration-progress",
+                    MigrationProgress::Progress {
+                        source: prog_source.clone(),
+                        bytes_done: done,
+                        bytes_total: prog_total,
+                        speed_bps: speed,
+                    },
+                );
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+            // 最后一次 emit（保证 100%）
+            let done = prog_counter.load(AOrd::Relaxed);
+            let _ = prog_app.emit(
+                "migration-progress",
+                MigrationProgress::Progress {
+                    source: prog_source,
+                    bytes_done: done,
+                    bytes_total: prog_total,
+                    speed_bps: 0,
+                },
+            );
+        });
+
         // 用 thread::scope + 滑动窗口控制并发（不依赖全局 rayon 线程池）
-        // active/bytes_done 声明在 scope 外（'env 可被 spawn 线程借用），
-        // scope 内 shadow 为引用（&AtomicUsize 是 Copy，spawn move 引用无害）
+        // scope 内 shadow 为 &AtomicU64（Arc deref，Copy 引用可被 spawn move）
+        let active = std::sync::atomic::AtomicUsize::new(0);
         let errors: Vec<String> = std::thread::scope(|s| {
             let active = &active;
-            let bytes_done = &bytes_done;
+            let bytes_done: &AtomicU64 = &bytes_done;
             let mut handles: Vec<_> = Vec::new();
-            for (sp, dp, sz) in &files {
+            for (sp, dp, _sz) in &files {
                 // 检查取消
-                if let Err(e) = self.check_control() {
+                if let Err(_e) = self.check_control() {
                     break;
                 }
                 // 等并发空位
@@ -422,38 +463,25 @@ impl MigrationTask {
 
                 let sp = sp.clone();
                 let dp = dp.clone();
-                let sz = *sz;
-                let sn = source_name.clone();
-                let this_app = self.app.clone();
                 let h = s.spawn(move || {
                     let result = (|| -> Result<(), String> {
                         for attempt in 0..3u32 {
-                            match self.copy_file(&sp, &dp) {
+                            match Self::copy_file_chunked(&sp, &dp, bytes_done) {
                                 Ok(()) => return Ok(()),
                                 Err(e) => {
-                                    let raw = std::io::Error::raw_os_error(&e);
-                                    let locked = raw == Some(32) || raw == Some(33) || raw == Some(5);
+                                    let locked = e.contains("(os error 32)")
+                                        || e.contains("(os error 33)")
+                                        || e.contains("(os error 5)");
                                     if locked && attempt < 2 {
                                         std::thread::sleep(std::time::Duration::from_millis(300));
                                         continue;
                                     }
-                                    return Err(format!("{}: {}", sp.display(), e));
+                                    return Err(e);
                                 }
                             }
                         }
                         Ok(())
                     })();
-                    if result.is_ok() {
-                        let done = bytes_done.fetch_add(sz, AOrd::AcqRel) + sz;
-                        let elapsed = t0.elapsed().as_secs_f64().max(0.001);
-                        let speed = (done as f64 / elapsed) as u64;
-                        let _ = this_app.emit("migration-progress", MigrationProgress::Progress {
-                            source: sn,
-                            bytes_done: done,
-                            bytes_total: total_size,
-                            speed_bps: speed,
-                        });
-                    }
                     active.fetch_sub(1, AOrd::AcqRel);
                     result
                 });
@@ -469,6 +497,10 @@ impl MigrationTask {
             errs
         });
 
+        // 停止进度线程
+        stop_emit.store(true, AOrd::Relaxed);
+        let _ = emit_thread.join();
+        let _ = t0;
         if !errors.is_empty() {
             return Err(format!("文件被占用无法复制（已重试）: {}", errors.join("; ")));
         }
@@ -506,6 +538,35 @@ impl MigrationTask {
             }
         }
         std::fs::remove_dir_all(path)
+    }
+
+    /// 分块复制单文件（1MB 块，对齐源码 copy_file_with_progress）：
+    /// 每块 fetch_add 全局计数 → 大文件中途进度真实（专用进度线程
+    /// 200ms 节流 emit）。保留 mtime。
+    fn copy_file_chunked(
+        src: &Path,
+        dst: &Path,
+        counter: &std::sync::atomic::AtomicU64,
+    ) -> Result<(), String> {
+        use std::io::{BufReader, BufWriter, Read, Write};
+        let open_err = |e: std::io::Error| format!("{}: {}", src.display(), e);
+        let mut reader = BufReader::with_capacity(1024 * 1024, std::fs::File::open(src).map_err(open_err)?);
+        let mut writer = BufWriter::with_capacity(1024 * 1024, std::fs::File::create(dst).map_err(open_err)?);
+        let mut buffer = vec![0u8; 1024 * 1024];
+        loop {
+            let n = reader.read(&mut buffer).map_err(open_err)?;
+            if n == 0 { break; }
+            writer.write_all(&buffer[..n]).map_err(|e| format!("{}: {}", dst.display(), e))?;
+            counter.fetch_add(n as u64, std::sync::atomic::Ordering::Relaxed);
+        }
+        writer.flush().map_err(|e| format!("{}: {}", dst.display(), e))?;
+        // 保留 mtime
+        if let Ok(meta) = std::fs::metadata(src) {
+            if let Ok(modified) = meta.modified() {
+                let _ = filetime::set_file_mtime(dst, filetime::FileTime::from_system_time(modified));
+            }
+        }
+        Ok(())
     }
 
     /// 逐文件复制（保留 mtime；V7：P2 阶段先保留 mtime，ACL 留后续）
