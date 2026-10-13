@@ -171,45 +171,92 @@ impl MigrationTask {
                     .map_err(|e| format!("整理目标目录失败: {}", e))?;
             }
 
-            // V1: 备份源目录到同卷持久位置（NOT %TEMP%）
-            let backup = source
+            // V1: 备份源目录（对齐 WindowsClear place_junction_with_backup 四层策略：
+            // rename 重试 → PermissionDenied 换名重试 → 杀占用进程重试 → 清属性强制删兜底）
+            let mut backup = source
                 .parent()
                 .unwrap_or(Path::new("."))
                 .join(format!(".cdisk-backup-{}-{}", folder_name, batch_ts));
 
-            // 尝试 rename 源 → backup（同卷原子操作）
-            let rename_ok = std::fs::rename(&source, &backup).is_ok();
+            // 1) rename 重试 3 次（200ms 间隔——WindowsClear 同款）
+            let mut rename_ok = false;
+            let mut last_err: Option<std::io::Error> = None;
+            for _ in 0..3u32 {
+                match std::fs::rename(&source, &backup) {
+                    Ok(_) => { rename_ok = true; break; }
+                    Err(e) => {
+                        last_err = Some(e);
+                        std::thread::sleep(std::time::Duration::from_millis(200));
+                    }
+                }
+            }
 
-            if !rename_ok && !kill_pids.is_empty() {
-                // 终止指定进程后重试
-                for &pid in &kill_pids {
+            // 2) PermissionDenied（error 5）→ 换父目录新名重试（WindowsClear 同款）
+            if !rename_ok {
+                let denied = last_err
+                    .as_ref()
+                    .map(|e| {
+                        e.kind() == std::io::ErrorKind::PermissionDenied
+                            || e.raw_os_error() == Some(5)
+                    })
+                    .unwrap_or(false);
+                if denied {
+                    let alt = source
+                        .parent()
+                        .unwrap_or(Path::new("."))
+                        .join(format!(".cdisk-bak2-{}-{}", folder_name, batch_ts));
+                    for _ in 0..3u32 {
+                        match std::fs::rename(&source, &alt) {
+                            Ok(_) => { backup = alt; rename_ok = true; break; }
+                            Err(e) => {
+                                last_err = Some(e);
+                                std::thread::sleep(std::time::Duration::from_millis(200));
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 3) 杀占用进程重试（前端勾选 autoKill 传 pids；否则查锁定进程）
+            if !rename_ok {
+                let pids: Vec<u32> = if !kill_pids.is_empty() {
+                    kill_pids.clone()
+                } else {
+                    proc_mgr::check_dir_locking(&source)
+                        .iter()
+                        .map(|p| p.pid)
+                        .collect()
+                };
+                for &pid in &pids {
                     if let Some(name) = proc_mgr::get_process_name(pid) {
                         if let Err(e) = proc_mgr::kill_process(pid, &name) {
                             log::warn!("跳过进程终止: {}", e);
                         }
                     }
                 }
-                std::thread::sleep(std::time::Duration::from_millis(500));
+                if !pids.is_empty() {
+                    std::thread::sleep(std::time::Duration::from_millis(300));
+                    for _ in 0..3u32 {
+                        match std::fs::rename(&source, &backup) {
+                            Ok(_) => { rename_ok = true; break; }
+                            Err(e) => {
+                                last_err = Some(e);
+                                std::thread::sleep(std::time::Duration::from_millis(200));
+                            }
+                        }
+                    }
+                }
             }
-
-            // 再试 rename
-            let rename_ok = std::fs::rename(&source, &backup).is_ok() || rename_ok;
 
             let mut renamed_to_backup = rename_ok;
             if !rename_ok {
-                // Fallback（对齐 AppData Mover 行为）：数据已完整复制到
-                // target，rename 原子备份因文件被占用失败 → 重试后直接
-                // 删除源目录再建 junction，数据安全由 target 完整副本保证
-                for _ in 0..3 {
-                    std::thread::sleep(std::time::Duration::from_millis(400));
-                    if std::fs::remove_dir_all(&source).is_ok() {
-                        break;
-                    }
-                }
-                if source.exists() {
+                // 4) 兜底（数据已完整复制到 target，删除源不丢数据）：
+                // 先清只读属性再删（remove_dir_all 对只读文件报 error 5
+                // 会被误判为"被占用"——Adobe 等软件目录普遍含只读安装文件）
+                if Self::force_remove_dir(&source).is_err() || source.exists() {
                     let pids = proc_mgr::check_dir_locking(&source);
                     let pid_txt = if pids.is_empty() {
-                        "未检测到具体进程（可能被系统服务锁定）".to_string()
+                        "未检测到具体进程".to_string()
                     } else {
                         format!(
                             "PID {:?}（{}）",
@@ -217,9 +264,13 @@ impl MigrationTask {
                             pids.iter().map(|p| p.name.clone()).collect::<Vec<_>>().join(", ")
                         )
                     };
+                    let detail = last_err
+                        .as_ref()
+                        .map(|e| e.to_string())
+                        .unwrap_or_else(|| "unknown".to_string());
                     let msg = format!(
-                        "源目录被占用无法迁移（{}）。请关闭相关软件后重试，或勾选「自动结束占用进程」。",
-                        pid_txt
+                        "备份源目录失败: {}。可能被占用，相关进程 {}. 请关闭相关软件后重试，或勾选「自动结束占用进程」。",
+                        detail, pid_txt
                     );
                     self.emit(MigrationProgress::Error { message: msg.clone() });
                     let _ = std::fs::remove_dir_all(&target_path);
@@ -431,6 +482,30 @@ impl MigrationTask {
         }
 
         Ok(())
+    }
+
+    /// 强制删除目录：先递归清只读/系统/隐藏属性再删。
+    /// Windows 的 remove_dir_all 对只读文件报 error 5（Access Denied），
+    /// 会被误判为"被占用"——Adobe 等软件目录普遍含只读安装文件
+    fn force_remove_dir(path: &Path) -> std::io::Result<()> {
+        use windows::core::PCWSTR;
+        use windows::Win32::Storage::FileSystem::{SetFileAttributesW, FILE_ATTRIBUTE_NORMAL};
+        for entry in walkdir::WalkDir::new(path)
+            .follow_links(false)
+            .into_iter()
+            .flatten()
+        {
+            let wide: Vec<u16> = entry
+                .path()
+                .to_string_lossy()
+                .encode_utf16()
+                .chain(std::iter::once(0))
+                .collect();
+            unsafe {
+                let _ = SetFileAttributesW(PCWSTR(wide.as_ptr()), FILE_ATTRIBUTE_NORMAL);
+            }
+        }
+        std::fs::remove_dir_all(path)
     }
 
     /// 逐文件复制（保留 mtime；V7：P2 阶段先保留 mtime，ACL 留后续）
