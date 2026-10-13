@@ -106,6 +106,7 @@ export const api_relocate = {
   get_relocate_config: () => invoke<RelocateConfig>("get_relocate_config"),
   save_relocate_config: (cfg: RelocateConfig) => invoke<void>("save_relocate_config", { configValue: cfg }),
   get_target_drive_free: (path: string) => invoke<number>("get_target_drive_free", { path }),
+  open_folder_in_explorer: (path: string) => invoke<void>("open_folder_in_explorer", { path }),
 };
 
 // ============ M5 系统瘦身（28） ============

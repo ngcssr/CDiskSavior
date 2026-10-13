@@ -519,6 +519,20 @@ pub fn open_logs_folder() -> Result<(), String> {
     Ok(())
 }
 
+/// 在资源管理器中打开任意目录（空间腾挪结果项点击用）
+#[tauri::command]
+pub fn open_folder_in_explorer(path: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    if !p.is_dir() {
+        return Err(format!("目录不存在: {}", path));
+    }
+    std::process::Command::new("explorer")
+        .arg(&path)
+        .spawn()
+        .map_err(|e| format!("打开目录失败: {}", e))?;
+    Ok(())
+}
+
 /// 设置自定义数据目录（迁移现有数据，源保留）
 #[tauri::command]
 pub fn set_data_directory(path: String) -> Result<String, String> {

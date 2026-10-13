@@ -54,6 +54,8 @@ export default function Relocate() {
   const [targetFree, setTargetFree] = useState<number | null>(null);
   const [autoKill, setAutoKill] = useState(false);
   const [concurrency, setConcurrency] = useState(6);
+  const [scanProgress, setScanProgress] = useState<{ percent: number; phase: string } | null>(null);
+  const scanUnlistenRef = useRef<UnlistenFn | null>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
 
   const addLog = (msg: string) => setLogs((l) => [...l.slice(-50), msg]);
@@ -82,6 +84,10 @@ export default function Relocate() {
       }
     })();
 
+    listen<{ percent: number; phase: string }>("relocate-scan-progress", (e) => {
+      setScanProgress(e.payload);
+    }).then((un) => { scanUnlistenRef.current = un; });
+
     listen<ProgressEvent>("migration-progress", (e) => {
       const p = e.payload;
       setProgress(p);
@@ -107,13 +113,14 @@ export default function Relocate() {
       }
     }).then((un) => { unlistenRef.current = un; });
 
-    return () => { unlistenRef.current?.(); };
+    return () => { unlistenRef.current?.(); scanUnlistenRef.current?.(); };
   }, []);
 
   // 扫描
   const doScan = useCallback(async () => {
     setPhase("scanning");
     setError(null);
+    setScanProgress({ percent: 0, phase: "准备扫描" });
     try {
       const result = await api_relocate.scan_relocate_targets();
       setTargets(result);
@@ -123,6 +130,8 @@ export default function Relocate() {
     } catch (e: any) {
       setError(e?.message ?? String(e));
       setPhase("error");
+    } finally {
+      setScanProgress(null);
     }
   }, []);
 
@@ -221,21 +230,6 @@ export default function Relocate() {
     ? Math.min((progress.bytesDone ?? 0) / progress.bytesTotal * 100, 100)
     : 0;
 
-  // 底部状态栏文案
-  const statusText = (() => {
-    if (phase === "scanning") return "扫描中…";
-    if (phase === "error") return "出错（见上方提示）";
-    if (migrating) {
-      if (progress?.bytesTotal === 0) return `正在分析 ${progress?.source ?? ""}…`;
-      if (progress?.bytesTotal && progress.bytesTotal > 0)
-        return `迁移中 ${progressPct.toFixed(0)}% · ${fmt(progress.bytesDone ?? 0)}/${fmt(progress.bytesTotal)}${progress.speedBps ? ` · ${fmt(progress.speedBps)}/s` : ""}`;
-      return "迁移中…";
-    }
-    if (phase === "ready" || targets.length > 0)
-      return `准备就绪：${targets.length} 个可迁移，已选 ${selected.size} 个（${fmt(totalSelected)}）`;
-    return "准备就绪";
-  })();
-
   return (
     <div className="flex h-full flex-col">
       {/* 头部 + tab */}
@@ -300,14 +294,18 @@ export default function Relocate() {
             <div className="mb-4 text-xs text-[var(--color-text-secondary)]">
               使用步骤：1 扫描大文件夹 → 2 勾选目录 → 3 执行迁移
             </div>
-            {/* 扫描进度条（扫描中显示 indeterminate 动画） */}
+            {/* 扫描进度条（真实百分比，来自 MFT 扫描进度事件） */}
             {phase === "scanning" && (
               <div className="mb-4">
-                <div className="mb-1 text-xs text-[var(--color-text-secondary)]">
-                  正在扫描大文件夹（MFT 快路径，首次约 10-25 秒）…
+                <div className="mb-1 flex justify-between text-xs text-[var(--color-text-secondary)]">
+                  <span>{scanProgress?.phase ?? "正在扫描大文件夹…"}</span>
+                  <span className="tabular-nums">{(scanProgress?.percent ?? 0).toFixed(0)}%</span>
                 </div>
                 <div className="h-1.5 overflow-hidden rounded-full bg-[var(--color-surface-hover)]">
-                  <div className="h-full w-1/3 animate-pulse rounded-full bg-[var(--color-primary)]" />
+                  <div
+                    className="h-full rounded-full bg-[var(--color-primary)] transition-all"
+                    style={{ width: `${Math.min(scanProgress?.percent ?? 0, 100)}%` }}
+                  />
                 </div>
               </div>
             )}
@@ -434,9 +432,19 @@ export default function Relocate() {
                       {t.isJunction
                         ? <FolderInput size={14} className="shrink-0 text-[var(--color-caution)]" />
                         : <Folder size={14} className="shrink-0 text-[var(--color-primary)]" />}
-                      <span className="shrink-0 font-medium text-[var(--color-primary)]">
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault(); // 阻止 label 联动勾选
+                          e.stopPropagation();
+                          api_relocate.open_folder_in_explorer(t.path).catch((err: any) =>
+                            setError(`打开目录失败: ${err?.message ?? err}`),
+                          );
+                        }}
+                        className="shrink-0 font-medium text-[var(--color-primary)] hover:underline"
+                        title={`打开 ${t.path}`}
+                      >
                         {folderName} ({fmt(t.size)})
-                      </span>
+                      </button>
                       <span className="shrink-0 rounded bg-[var(--color-surface-hover)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-secondary)]">
                         [{t.label}]
                       </span>
@@ -529,13 +537,6 @@ export default function Relocate() {
             ))}
           </div>
         )}
-      </div>
-
-      {/* 底部状态栏 */}
-      <div className="border-t border-[var(--color-line)] bg-[var(--color-surface)] px-6 py-1.5">
-        <span className={`text-xs ${phase === "error" ? "text-[var(--color-danger-text)]" : "text-[var(--color-text-secondary)]"}`}>
-          {statusText}
-        </span>
       </div>
     </div>
   );

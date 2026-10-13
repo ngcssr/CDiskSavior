@@ -209,6 +209,7 @@ pub fn run() {
             commands::pick_folder_dialog,
             commands::get_physical_size,
             commands::open_logs_folder,
+            commands::open_folder_in_explorer,
             commands::set_data_directory,
             commands::get_distribution_channel,
             commands::get_storage_location_info,

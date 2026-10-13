@@ -23,11 +23,19 @@ struct TaskHandle {
 }
 
 /// 扫描可迁移目标——MFT 快路径（树聚合，秒级）+ walkdir 回退
+/// 扫描进度经 "relocate-scan-progress" 事件推送（真实百分比）
 #[tauri::command]
 pub async fn scan_relocate_targets(app: AppHandle) -> Result<Vec<RelocateTarget>, String> {
+    use tauri::Emitter;
     tauri::async_runtime::spawn_blocking(move || {
         let cfg = config::load_config(&app);
-        let _ = &app;
+        let emit = |percent: f32, phase: &str| {
+            let _ = app.emit(
+                "relocate-scan-progress",
+                serde_json::json!({ "percent": percent, "phase": phase }),
+            );
+        };
+        emit(0.0, "准备扫描");
 
         // 收集涉及的盘符树：DRIVE_TREE_CACHE 命中秒回；未命中且提权时
         // 进程内 MFT 单遍（11-25s，与磁盘透视共用缓存体系）
@@ -40,24 +48,30 @@ pub async fn scan_relocate_targets(app: AppHandle) -> Result<Vec<RelocateTarget>
             .filter_map(|s| s.path.chars().next())
             .filter(|c| c.is_ascii_alphabetic())
             .collect();
-        for letter in letters {
+        let total_letters = letters.len().max(1) as f32;
+        for (i, letter) in letters.iter().enumerate() {
             let root = format!("{}:\\", letter);
+            emit((i as f32 / total_letters) * 80.0, &format!("读取 {} 盘 MFT", letter));
             let tree = crate::commands::try_cached_tree(&root).or_else(|| {
-                if crate::lightc_mft::is_elevated() && crate::lightc_mft::mft_available(letter) {
+                if crate::lightc_mft::is_elevated() && crate::lightc_mft::mft_available(*letter) {
                     crate::scan_log(&format!("relocate-scan MFT build root={}", root));
-                    crate::mft_scan::scan_mft(&root, |_, _, _, _| {})
-                        .ok()
-                        .and_then(|t| serde_json::to_value(&t).ok())
-                        .and_then(|v| serde_json::from_value::<crate::scan::TreeNode>(v).ok())
+                    // MFT 真实进度映射到 0-80% 区间
+                    crate::mft_scan::scan_mft(&root, |_, _, pct, phase| {
+                        emit(pct * 0.8, &format!("扫描 {} 盘 MFT: {}", letter, phase));
+                    })
+                    .ok()
+                    .and_then(|t| serde_json::to_value(&t).ok())
+                    .and_then(|v| serde_json::from_value::<crate::scan::TreeNode>(v).ok())
                 } else {
                     None
                 }
             });
             if let Some(t) = tree {
-                trees.insert(letter, t);
+                trees.insert(*letter, t);
             }
         }
 
+        emit(85.0, "聚合大文件夹");
         // MFT 快路径
         let mut targets = scanner::scan_large_folders_from_tree(&cfg.scan_sources, &trees, None);
 
@@ -71,12 +85,14 @@ pub async fn scan_relocate_targets(app: AppHandle) -> Result<Vec<RelocateTarget>
             })
             .collect();
         if !missing.is_empty() {
+            emit(88.0, "慢速遍历（MFT 不可用）");
             let refs: Vec<crate::relocate::scanner::ScanSource> =
                 missing.iter().map(|s| (*s).clone()).collect();
             let extra = scanner::scan_large_folders(&refs, None);
             targets.extend(extra);
         }
 
+        emit(100.0, "扫描完成");
         targets.sort_by(|a, b| b.size.cmp(&a.size));
         targets
     })
