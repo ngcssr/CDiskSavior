@@ -201,13 +201,23 @@ export default function Relocate() {
   const resume = () => api_relocate.resume_migration().catch(() => {});
   const cancel = () => api_relocate.cancel_migration().catch(() => {});
 
-  const restore = async (id: string) => {
+  const restore = async (id: string, force = false) => {
     try {
-      await api_relocate.restore_migration(id);
+      await api_relocate.restore_migration(id, force);
       addLog(`✓ 已回滚：${id}`);
       setHistory(await api_relocate.list_migration_history());
+      setTab("logs");
     } catch (e: any) {
-      setError(e?.message ?? String(e));
+      const msg = String(e?.message ?? e);
+      if (msg.includes("RESTORE_CONFLICT")) {
+        // 源位置被软件重建——用户确认后强制回滚
+        const human = msg.replace("RESTORE_CONFLICT:", "").trim();
+        if (window.confirm(`${human}\n\n确定强制回滚吗？重建目录中的新数据将被删除。`)) {
+          await restore(id, true);
+        }
+        return;
+      }
+      setError(msg);
     }
   };
 
@@ -306,6 +316,48 @@ export default function Relocate() {
                     className="h-full rounded-full bg-[var(--color-primary)] transition-all"
                     style={{ width: `${Math.min(scanProgress?.percent ?? 0, 100)}%` }}
                   />
+                </div>
+              </div>
+            )}
+            {/* 迁移进度条（同一位置：百分比+速度+已传/总量+控制） */}
+            {migrating && (
+              <div className="mb-4 rounded-lg border border-[var(--color-primary)]/30 bg-[var(--color-primary-soft)]/30 p-3">
+                <div className="mb-1 flex justify-between text-xs">
+                  <span className="truncate font-medium">
+                    {progress?.source
+                      ? (progress.bytesTotal === 0
+                          ? `正在分析 ${progress.source.split(/[\\/]/).filter(Boolean).pop() ?? progress.source}…`
+                          : progress.source.split(/[\\/]/).filter(Boolean).pop() ?? progress.source)
+                      : "迁移中…"}
+                  </span>
+                  <span className="tabular-nums">
+                    {progress?.bytesTotal === 0 ? "…" : `${progressPct.toFixed(0)}%`}
+                  </span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-[var(--color-surface-hover)]">
+                  {progress?.bytesTotal === 0 ? (
+                    <div className="h-full w-1/3 animate-pulse rounded-full bg-[var(--color-primary)]" />
+                  ) : (
+                    <div className="h-full rounded-full bg-[var(--color-primary)] transition-all" style={{ width: `${progressPct}%` }} />
+                  )}
+                </div>
+                <div className="mt-1 flex items-center justify-between text-xs text-[var(--color-text-secondary)]">
+                  <span className="tabular-nums">
+                    {progress?.bytesTotal && progress.bytesTotal > 0
+                      ? `${fmt(progress.bytesDone ?? 0)} / ${fmt(progress.bytesTotal)}${progress.speedBps ? ` · ${fmt(progress.speedBps)}/s` : ""}`
+                      : "计算目录大小中"}
+                  </span>
+                  <div className="flex gap-2">
+                    <button onClick={pause} className="flex items-center gap-1 rounded bg-[var(--color-surface-hover)] px-2.5 py-1">
+                      <Pause size={12} /> 暂停
+                    </button>
+                    <button onClick={resume} className="flex items-center gap-1 rounded bg-[var(--color-surface-hover)] px-2.5 py-1">
+                      <Play size={12} /> 继续
+                    </button>
+                    <button onClick={cancel} className="flex items-center gap-1 rounded bg-[var(--color-danger-bg-soft)] px-2.5 py-1 text-[var(--color-danger-text)]">
+                      <X size={12} /> 取消
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -456,39 +508,6 @@ export default function Relocate() {
               </div>
             )}
 
-            {/* 迁移中进度条 */}
-            {migrating && (
-              <div className="mt-4 rounded-lg border border-[var(--color-primary)]/30 bg-[var(--color-primary-soft)]/30 p-3">
-                <div className="mb-1 flex justify-between text-xs">
-                  <span className="truncate">
-                    {progress?.source
-                      ? (progress.bytesTotal === 0 ? `正在分析 ${progress.source}…` : progress.source)
-                      : "迁移中…"}
-                  </span>
-                  <span className="tabular-nums">
-                    {progress?.bytesTotal === 0 ? "…" : `${progressPct.toFixed(0)}%`}
-                  </span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-[var(--color-surface-hover)]">
-                  {progress?.bytesTotal === 0 ? (
-                    <div className="h-full w-1/3 animate-pulse rounded-full bg-[var(--color-primary)]" />
-                  ) : (
-                    <div className="h-full rounded-full bg-[var(--color-primary)] transition-all" style={{ width: `${progressPct}%` }} />
-                  )}
-                </div>
-                <div className="mt-2 flex gap-2">
-                  <button onClick={pause} className="flex items-center gap-1 rounded bg-[var(--color-surface-hover)] px-2.5 py-1 text-xs">
-                    <Pause size={12} /> 暂停
-                  </button>
-                  <button onClick={resume} className="flex items-center gap-1 rounded bg-[var(--color-surface-hover)] px-2.5 py-1 text-xs">
-                    <Play size={12} /> 继续
-                  </button>
-                  <button onClick={cancel} className="flex items-center gap-1 rounded bg-[var(--color-danger-bg-soft)] px-2.5 py-1 text-xs text-[var(--color-danger-text)]">
-                    <X size={12} /> 取消
-                  </button>
-                </div>
-              </div>
-            )}
           </>
         ) : tab === "logs" ? (
           /* 日志 tab */

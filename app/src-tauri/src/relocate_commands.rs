@@ -205,9 +205,10 @@ pub fn cancel_migration() -> Result<(), String> {
     }
 }
 
-/// 回滚迁移（恢复源目录）
+/// 回滚迁移（恢复源目录）。force=true 时源位置的非链接目录会被
+/// 迁移数据覆盖（软件迁移后重建了源目录的场景，用户显式确认）
 #[tauri::command]
-pub async fn restore_migration(app: AppHandle, record_id: String) -> Result<(), String> {
+pub async fn restore_migration(app: AppHandle, record_id: String, force: Option<bool>) -> Result<(), String> {
     // 读记录（只读，不需要锁）
     let history = HistoryManager::new(&app).ok_or("无法初始化迁移历史")?;
     let records = history.load();
@@ -221,6 +222,7 @@ pub async fn restore_migration(app: AppHandle, record_id: String) -> Result<(), 
     let target = record.target_path.clone();
     let app_clone = app.clone();
     let id_clone = record_id.clone();
+    let force_clone = force.unwrap_or(false);
 
     // 整个写操作放进 spawn_blocking（锁在其中获取，不跨 await 边界 → Send 安全）
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
@@ -241,10 +243,15 @@ pub async fn restore_migration(app: AppHandle, record_id: String) -> Result<(), 
             crate::relocate::junction::remove_junction(source)
                 .map_err(|e| format!("解除 Junction 失败: {}", e))?;
         } else if source.exists() && source.is_dir() {
-            return Err(format!(
-                "还原位置 {} 已包含非链接目录，为保护数据取消还原。请先手动清理。",
-                source.display()
-            ));
+            if !force_clone {
+                return Err(format!(
+                    "RESTORE_CONFLICT:还原位置 {} 已包含非链接目录（可能是软件迁移后重建）。强制回滚将删除该目录并用迁移数据还原。",
+                    source.display()
+                ));
+            }
+            // 强制回滚：删除重建的源目录，用迁移数据还原
+            std::fs::remove_dir_all(source)
+                .map_err(|e| format!("清理已重建的源目录失败: {}", e))?;
         }
 
         // 跨卷 rename 可能失败 → 尝试同卷 rename
