@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="clay" x1="0.15" y1="0" x2="0.75" y2="1">
+      <stop offset="0" stop-color="#e08264"/>
+      <stop offset="0.45" stop-color="#d97757"/>
+      <stop offset="1" stop-color="#cc5a36"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.38"/>
+      <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="192" fill="url(#clay)"/>
+  <rect x="64" y="64" width="896" height="460" rx="192" fill="url(#gloss)"/>
+  <rect x="66" y="66" width="892" height="892" rx="190" fill="none" stroke="#ffffff" stroke-opacity="0.16" stroke-width="4"/>
+  <g transform="translate(224,224) scale(24)" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 2v8"/>
+    <path d="m16 6-4 4-4-4"/>
+    <rect width="20" height="8" x="2" y="14" rx="2"/>
+    <path d="M6 18h.01"/>
+    <path d="M10 18h.01"/>
+  </g>
+</svg>
