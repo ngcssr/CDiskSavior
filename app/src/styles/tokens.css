@@ -19,11 +19,11 @@
   --color-text-secondary: #8b93a3;
   --color-text-dim: #5b6474;
 
-  /* 强调色 · 电光青（单点强调，其他全部中性） */
-  --color-primary: #22d3ee;
-  --color-primary-strong: #67e8f9;
-  --color-primary-soft: rgba(34, 211, 238, 0.10);
-  --color-primary-glow: rgba(34, 211, 238, 0.28);
+  /* 强调色 · 陶土橙（单点强调，其他全部中性） */
+  --color-primary: #d97757;
+  --color-primary-strong: #e08264;
+  --color-primary-soft: rgba(217, 119, 87, 0.14);
+  --color-primary-glow: rgba(217, 119, 87, 0.28);
 
   /* 语义色（克制使用） */
   --color-safe: #34d399;
@@ -55,36 +55,36 @@
     sans-serif;
 }
 
-/* 亮色主题（设置里可切换；默认深色） */
+/* 亮色主题（默认）—— CDS 陶土米白（对齐 open-claude-ui 设计语言） */
 [data-theme="light"] {
-  --color-bg: #f4f6f9;
-  --color-bg-2: #eef1f5;
+  --color-bg: #f5f5f3;
+  --color-bg-2: #fcfcfb;
   --color-surface: #ffffff;
-  --color-surface-2: #f7f9fc;
-  --color-surface-hover: #eef2f7;
-  --color-line: rgba(15, 23, 42, 0.08);
-  --color-line-strong: rgba(15, 23, 42, 0.14);
+  --color-surface-2: #fbfbfa;
+  --color-surface-hover: #f5f5f3;
+  --color-line: hsla(0, 0%, 8%, 0.10);
+  --color-line-strong: hsla(0, 0%, 8%, 0.20);
 
-  --color-text: #14181f;
-  --color-text-secondary: #5c6474;
-  --color-text-dim: #98a1b0;
+  --color-text: #151515;
+  --color-text-secondary: #525252;
+  --color-text-dim: #8a8a8a;
 
-  --color-primary: #0891b2;
-  --color-primary-strong: #0e7490;
-  --color-primary-soft: rgba(8, 145, 178, 0.09);
-  --color-primary-glow: rgba(8, 145, 178, 0.20);
+  --color-primary: #d97757;
+  --color-primary-strong: #cc5a36;
+  --color-primary-soft: #fbf3ef;
+  --color-primary-glow: rgba(217, 119, 87, 0.20);
 
-  --color-safe: #059669;
-  --color-safe-soft: rgba(5, 150, 105, 0.09);
-  --color-caution: #b45309;
-  --color-caution-soft: rgba(180, 83, 9, 0.09);
+  --color-safe: #16a34a;
+  --color-safe-soft: rgba(22, 163, 74, 0.09);
+  --color-caution: #d97706;
+  --color-caution-soft: rgba(217, 119, 6, 0.09);
   --color-danger: #dc2626;
   --color-danger-bg-soft: rgba(220, 38, 38, 0.07);
   --color-danger-text: #b91c1c;
 
-  --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.05);
-  --shadow-2: 0 8px 24px rgba(15, 23, 42, 0.08);
-  --shadow-3: 0 24px 64px rgba(15, 23, 42, 0.12);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.05), 0 2px 8px 0 rgba(0, 0, 0, 0.08);
+  --shadow-2: 0 2px 4px rgba(0, 0, 0, 0.05), 0 6px 16px 0 rgba(0, 0, 0, 0.08);
+  --shadow-3: 0 4px 8px rgba(0, 0, 0, 0.06), 0 12px 28px -2px rgba(0, 0, 0, 0.08);
 }
 
 /* ============ 基础 ============ */
@@ -216,14 +216,13 @@ body::before {
 .btn-primary {
   background: var(--color-primary);
   border-color: transparent;
-  color: #06222a;
+  color: #ffffff;
   font-weight: 600;
 }
 .btn-primary:hover {
   background: var(--color-primary-strong);
   box-shadow: 0 0 20px var(--color-primary-glow);
 }
-[data-theme="light"] .btn-primary { color: #ffffff; }
 
 .btn-danger {
   background: var(--color-danger-bg-soft);
