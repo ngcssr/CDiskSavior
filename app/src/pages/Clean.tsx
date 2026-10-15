@@ -74,16 +74,18 @@ export default function Clean() {
     setScanning(true);
     setError(null);
     try {
-      const [scan, st, lo] = await Promise.all([
+      // 主视图（清理项清单 + 统计）立即返回，不阻塞切页；
+      // 残留扫描（注册表遍历）+ 社交缓存扫描较慢，独立后台加载
+      const [scan, st] = await Promise.all([
         api_clean.list_cleanup_items(),
         api_clean.get_cleanup_stats(),
-        api_clean.scan_uninstall_leftovers(),
       ]);
       setItems(scan.items);
       setStats(st);
-      setLeftovers(lo);
-      setLeftoverSelected(new Set(lo.high.map((e) => e.path)));
-      // 社交缓存独立加载（扫描较慢，失败不阻塞）
+      api_clean.scan_uninstall_leftovers().then((lo) => {
+        setLeftovers(lo);
+        setLeftoverSelected(new Set(lo.high.map((e) => e.path)));
+      }).catch(() => {});
       api_clean.scan_social_cache().then(setSocial).catch(() => {});
     } catch (e: any) {
       setError(e?.message ?? String(e));

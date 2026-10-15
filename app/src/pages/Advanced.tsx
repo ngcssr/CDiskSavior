@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { api_advanced } from "../api/commands";
 import { ShieldCheck, RefreshCw, Zap, FileSearch } from "lucide-react";
 
@@ -35,8 +35,6 @@ export default function Advanced() {
       setScanning(false);
     }
   }, []);
-
-  useEffect(() => { analyze(); }, [analyze]);
 
   const deepCleanSystem = async () => {
     setCleaning(true);
@@ -127,7 +125,15 @@ export default function Advanced() {
         )}
 
         {/* 操作按钮 */}
-        <section className="mb-6 flex gap-3">
+        <section className="mb-6 flex flex-wrap gap-3">
+          <button
+            onClick={analyze}
+            disabled={cleaning || scanning}
+            className="flex items-center gap-2 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-4 py-2 text-sm disabled:opacity-50"
+          >
+            {scanning ? <RefreshCw size={16} className="animate-spin" /> : <FileSearch size={16} />}
+            空间分析
+          </button>
           <button
             onClick={deepCleanSystem}
             disabled={cleaning || scanning}

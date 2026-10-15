@@ -40,14 +40,12 @@ export default function Slim() {
 
   const refresh = useCallback(async () => {
     try {
-      const [st, drv, ai] = await Promise.all([
-        api_slim.get_system_slim_status(),
-        api_slim.scan_old_drivers(),
-        api_slim.scan_ai_model_assets(),
-      ]);
+      // 主视图（休眠/WinSxS 现状）立即返回；旧驱动 + AI 模型扫描
+      // 较慢，独立后台加载不阻塞切页
+      const st = await api_slim.get_system_slim_status();
       setStatus(st);
-      setDrivers(drv);
-      setAiModels(ai);
+      api_slim.scan_old_drivers().then(setDrivers).catch(() => {});
+      api_slim.scan_ai_model_assets().then(setAiModels).catch(() => {});
     } catch (e: any) {
       setError(e?.message ?? String(e));
     }

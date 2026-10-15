@@ -239,11 +239,11 @@ export default function Insight() {
     }
   }, []);
 
-  // 首次加载：扫描 C:\ + 检查基线
+  // 首次加载：仅检查增长基线（轻量），不自动扫描 MFT——切页立即显示，
+  // 真实扫描由用户点击「重新扫描」或空状态引导按钮触发（懒加载）
   useEffect(() => {
-    scan("C:\\", false);
     api_insight.has_disk_snapshot("C:\\").then(setHasBaseline).catch(() => {});
-  }, [scan]);
+  }, []);
 
   const runHotspot = async () => {
     setHotspotLoading(true);
@@ -387,6 +387,24 @@ export default function Insight() {
           </div>
         )}
         {error && <div className="mb-4 rounded-xl border border-[var(--color-danger)]/30 bg-[var(--color-danger-bg-soft)] px-4 py-3 text-sm text-[var(--color-danger-text)]">{error}</div>}
+
+        {/* 空状态：未扫描时显示引导，点击才触发扫描（懒加载） */}
+        {tab === "tree" && !tree && !loading && (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <RefreshCw size={40} className="mb-3 text-[var(--color-text-dim)]" />
+            <div className="text-sm font-medium">尚未扫描</div>
+            <div className="mt-1 text-xs text-[var(--color-text-secondary)]">
+              解析 C 盘文件表查看空间分布（首次约 20-30 秒，之后秒开）
+            </div>
+            <button
+              onClick={() => scan("C:\\", false)}
+              className="mt-4 flex items-center gap-1.5 rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--color-primary-strong)]"
+            >
+              <RefreshCw size={14} />
+              立即扫描
+            </button>
+          </div>
+        )}
 
         {tab === "tree" && tree && !loading && (
           <div className="flex items-start gap-4">
