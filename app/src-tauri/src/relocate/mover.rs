@@ -367,6 +367,22 @@ impl MigrationTask {
     ) -> Result<(), String> {
         std::fs::create_dir_all(dst).map_err(|e| format!("创建目标目录失败: {}", e))?;
 
+        crate::scan_log(&format!(
+            "relocate copy_dir start src={} total_size={}",
+            src.display(),
+            total_size
+        ));
+
+        // 0. 收集前先发初始进度（bytesTotal=total_size）——让前端从
+        // "正在分析"切换到"0% 复制"，避免收集文件阶段（大目录 10-30s）
+        // 无事件导致进度条"一直 0"
+        self.emit(MigrationProgress::Progress {
+            source: src.to_string_lossy().to_string(),
+            bytes_done: 0,
+            bytes_total: total_size,
+            speed_bps: 0,
+        });
+
         // 1. 先遍历收集所有文件 + 建目录树
         let mut files: Vec<(std::path::PathBuf, std::path::PathBuf, u64)> = Vec::new();
         let mut skipped_reparse: Vec<String> = Vec::new();
@@ -391,6 +407,12 @@ impl MigrationTask {
                 files.push((src_path.to_path_buf(), dst_path, size));
             }
         }
+
+        crate::scan_log(&format!(
+            "relocate copy_dir collected files={} total_size={}",
+            files.len(),
+            total_size
+        ));
 
         // 2. 并行复制文件（concurrency 限制并发数）+ 分块计数真实进度
         // 进度机制（对齐源码 copy_file_with_progress 的 1MB 分块 + 适配

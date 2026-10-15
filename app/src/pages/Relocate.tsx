@@ -172,6 +172,7 @@ export default function Relocate() {
     setPhase("migrating");
     setError(null);
     setLogs([]);
+    setProgress(null); // 重置进度，避免旧迁移进度残留
     const t0 = Date.now();
     try {
       if (autoKill) {
@@ -470,7 +471,7 @@ export default function Relocate() {
               <div className="mb-3">
                 <div className="mb-1 flex items-center gap-3">
                   <div className="h-4 flex-1 overflow-hidden rounded bg-[var(--color-surface-hover)]">
-                    {progress?.bytesTotal === 0 ? (
+                    {!progress || !progress.bytesTotal ? (
                       <div className="h-full w-1/3 animate-pulse rounded bg-[var(--color-primary)]" />
                     ) : (
                       <div
@@ -480,13 +481,13 @@ export default function Relocate() {
                     )}
                   </div>
                   <span className="shrink-0 text-sm font-medium tabular-nums">
-                    {progress?.bytesTotal === 0 ? "…" : `${progressPct.toFixed(0)}%`}
+                    {!progress || !progress.bytesTotal ? "…" : `${progressPct.toFixed(0)}%`}
                   </span>
                 </div>
                 <div className="text-xs tabular-nums text-[var(--color-text-secondary)]">
-                  {progress?.bytesTotal === 0
+                  {!progress || !progress.bytesTotal
                     ? `正在分析 ${progress?.source?.split(/[\\/]/).filter(Boolean).pop() ?? ""}（计算目录大小中）…`
-                    : `${fmt(progress?.bytesDone ?? 0)}/${fmt(progress?.bytesTotal ?? 0)} 速度: ${fmt(progress?.speedBps ?? 0)}/s 剩余: ${remainingText}`}
+                    : `${fmt(progress.bytesDone ?? 0)}/${fmt(progress.bytesTotal ?? 0)} 速度: ${fmt(progress.speedBps ?? 0)}/s 剩余: ${remainingText}`}
                 </div>
               </div>
             )}
