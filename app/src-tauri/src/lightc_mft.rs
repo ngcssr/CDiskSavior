@@ -185,7 +185,9 @@ fn read_usn_record(
     unsafe {
         let base = buffer.as_ptr().add(offset);
         let record_len = std::ptr::read_unaligned(base as *const u32) as usize;
-        if record_len == 0 || offset + record_len > bytes_returned {
+        // USN_RECORD_V2 头固定 60 字节：record_len 过小（损坏记录）会导致
+        // 下方 add(8/16/52/56/58) 越界读——必须先校验最小长度
+        if record_len == 0 || record_len < 60 || offset + record_len > bytes_returned {
             return None;
         }
 
@@ -346,6 +348,12 @@ impl NtfsFileMetadataReader {
             .copied()
             .ok_or_else(|| "NTFS 引导扇区缺少 sectors_per_cluster".to_string())?
             as usize;
+        // 引导扇区损坏校验（防除零/取模/移位 panic）：
+        // bytes_per_sector 与 sectors_per_cluster 必须非零（否则 cluster_size=0，
+        // 后续 chunks_exact(0)/除法全部 panic）
+        if bytes_per_sector == 0 || sectors_per_cluster == 0 {
+            return Err("NTFS 引导扇区损坏：bytes_per_sector 或 sectors_per_cluster 为 0".to_string());
+        }
         let cluster_size = (bytes_per_sector * sectors_per_cluster) as u64;
         let mft_lcn =
             read_i64(&boot_sector, 48).ok_or_else(|| "NTFS 引导扇区缺少 MFT LCN".to_string())?;
@@ -739,7 +747,14 @@ fn decode_file_record_size(raw: i8, cluster_size: u64) -> usize {
     if raw > 0 {
         raw as usize * cluster_size as usize
     } else {
-        1usize << (-raw as usize)
+        // 合法 NTFS 值为 -10/-11/-12（1024/2048/4096）。损坏引导扇区可能
+        // 出现 raw=-128（-raw 溢出）或 raw<=-64（移位溢出 panic）——
+        // 限定范围，非法值兜底 4096
+        let shift = (-(raw as i32)) as u32;
+        if shift == 0 || shift > 12 {
+            return 4096;
+        }
+        1usize << shift
     }
 }
 
@@ -791,6 +806,11 @@ fn read_unsigned_le(bytes: &[u8]) -> u64 {
 fn read_signed_le(bytes: &[u8]) -> i64 {
     if bytes.is_empty() {
         return 0;
+    }
+    // 8 字节已是完整 i64，直接按位解释即可；走下方 1i64<<(len*8) 会
+    // 移位溢出（len==8 → <<64 非法）
+    if bytes.len() == 8 {
+        return read_unsigned_le(bytes) as i64;
     }
 
     let mut value = read_unsigned_le(bytes) as i64;

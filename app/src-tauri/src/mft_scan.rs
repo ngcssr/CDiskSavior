@@ -895,14 +895,16 @@ pub fn scan_mft_stats<F: FnMut(u64, u64, f32, &str)>(
     // 迭代解析：一次不够（父目录可能记录号更大），循环到收敛
     let rec_len = rec.parent.len();
     loop {
-        let mut resolved = 0usize;
+        // 用"本趟新增解析数"判断收敛——原实现用 resolved 统计已解析
+        // 总数（恒等于 dir_path.len()-1），第一趟就误判收敛，导致
+        // 父记录号更大的目录漏解析、漏统计
+        let mut newly_resolved = 0usize;
         for i in (FIRST_NORMAL_RECORD as usize)..rec_len {
             if !rec.is_dir[i] {
                 continue;
             }
             let n = i as u64;
             if dir_path.contains_key(&n) {
-                resolved += 1;
                 continue;
             }
             let p = rec.parent[i];
@@ -913,11 +915,11 @@ pub fn scan_mft_stats<F: FnMut(u64, u64, f32, &str)>(
                 let name = resolve_name(n);
                 let full = format!("{}\\{}", pp.trim_end_matches('\\'), name);
                 dir_path.insert(n, full);
-                resolved += 1;
+                newly_resolved += 1;
             }
         }
-        // 全部目录已解析或无进展（孤儿链）则退出
-        if resolved >= dir_path.len() - 1 {
+        // 本趟无新解析（已收敛或孤儿链断裂）则退出
+        if newly_resolved == 0 {
             break;
         }
     }

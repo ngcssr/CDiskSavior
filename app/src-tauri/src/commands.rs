@@ -936,13 +936,38 @@ pub async fn run_deep_clean(app: tauri::AppHandle, ids: Vec<String>) -> Result<c
 pub async fn run_deep_clean_system() -> Result<serde_json::Value, String> {
     // R4 提权：清 Windows\Temp + SoftwareDistribution\Download（DISM 级耗时）
     tauri::async_runtime::spawn_blocking(|| {
-        let script = r#"Remove-Item -Recurse -Force "$env:SystemRoot\Temp\*" -EA SilentlyContinue;
-                        Remove-Item -Recurse -Force "$env:SystemRoot\SoftwareDistribution\Download\*" -EA SilentlyContinue"#;
-        crate::slim::run_elevated_ps_pub(script)?;
-        Ok(serde_json::json!({ "result": "system temp cleaned" }))
+        // M2 防护（对齐 disk-butler deep_clean_system）：有挂起更新时只清
+        // 临时目录、跳过更新缓存；清更新缓存用 try/finally 停/启 wuauserv
+        let pending = update_pending();
+        let mut script = String::from(
+            "$ErrorActionPreference='SilentlyContinue'; \
+             Get-ChildItem -LiteralPath \"$env:SystemRoot\\Temp\" -Force | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue;",
+        );
+        if !pending {
+            script.push_str(
+                " try { Stop-Service wuauserv -Force -ErrorAction SilentlyContinue; \
+                 Get-ChildItem -LiteralPath \"$env:SystemRoot\\SoftwareDistribution\\Download\" -Force | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue } \
+                 finally { Start-Service wuauserv -ErrorAction SilentlyContinue }",
+            );
+        }
+        crate::slim::run_elevated_ps_pub(&script)?;
+        Ok(serde_json::json!({ "result": "system temp cleaned", "updateCacheSkipped": pending }))
     })
     .await
     .map_err(|e| format!("清理失败: {}", e))?
+}
+
+/// 是否有挂起/待重启的 Windows 更新（对齐 disk-butler update_pending）——
+/// 有则跳过更新缓存清理，避免打断进行中的更新
+fn update_pending() -> bool {
+    use winreg::enums::HKEY_LOCAL_MACHINE;
+    use winreg::RegKey;
+    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+    hklm.open_subkey(r"SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending")
+        .is_ok()
+        || hklm
+            .open_subkey(r"SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired")
+            .is_ok()
 }
 
 /// 规则采集报告（disk-butler collector 移植：目录名+大小+缓存模式+软件清单，

@@ -914,9 +914,19 @@ fn dir_size(path: &Path) -> u64 {
 /// 尽最大努力删掉能删的部分。与 remove_dir_all 的"全有或全无"不同——避免单个被占用文件
 /// 导致整目录清理失败（如刚卸载完 WPS，云同步后台仍锁着个别文件）。
 fn robust_remove_dir(path: &Path) {
+    // M1 防护：reparse point（junction/symlink）跳过——不删链接指向的
+    // 目标盘数据（对齐 engine::safe_remove_dir_all 的护栏标准）
+    if crate::cleaner::engine::is_reparse_point(path) {
+        log::warn!("robust_remove_dir 跳过 reparse point: {}", path.display());
+        return;
+    }
     let Ok(read) = std::fs::read_dir(path) else { return };
     for entry in read.flatten() {
         let p = entry.path();
+        if crate::cleaner::engine::is_reparse_point(&p) {
+            log::warn!("robust_remove_dir 跳过 reparse 子项: {}", p.display());
+            continue;
+        }
         if p.is_dir() {
             if std::fs::remove_dir_all(&p).is_err() {
                 robust_remove_dir(&p);

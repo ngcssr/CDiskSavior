@@ -352,7 +352,37 @@ pub fn check_safety(path: &str) -> LeftoverSafety {
     LeftoverSafety { path: path.into(), score, verdict: verdict.into(), reasons }
 }
 
-/// 删除残留（当场重扫 + 白名单 + R1 引擎）
+/// 浅层扫描目录是否含可执行文件（对齐 light-c has_executables_shallow：
+/// depth≤3 扫 .exe/.dll/.sys，命中即视为"可能仍是可运行的程序"，
+/// 删除阶段跳过并提示人工确认，避免误删未卸载干净的软件）
+fn has_executables_shallow(path: &Path) -> bool {
+    const EXEC: &[&str] = &["exe", "dll", "sys", "drv", "ocx", "cpl", "scr"];
+    let mut depth = 0usize;
+    let mut stack: Vec<(std::path::PathBuf, usize)> = vec![(path.to_path_buf(), 0)];
+    while let Some((p, d)) = stack.pop() {
+        if d > 3 {
+            continue;
+        }
+        let Ok(rd) = std::fs::read_dir(&p) else { continue };
+        for entry in rd.flatten() {
+            let ep = entry.path();
+            if ep.is_dir() {
+                if d < 3 {
+                    stack.push((ep, d + 1));
+                }
+            } else if let Some(ext) = ep.extension().and_then(|e| e.to_str()) {
+                if EXEC.contains(&ext.to_ascii_lowercase().as_str()) {
+                    return true;
+                }
+            }
+        }
+        depth = d;
+    }
+    let _ = depth;
+    false
+}
+
+/// 删除残留（当场重扫 + 白名单 + R1 引擎 + 可执行文件浅层拦截）
 pub fn delete(paths: &[String]) -> LeftoverDeleteReport {
     let _lock = crate::state::acquire_write_lock();
     // 当场重扫得到允许集合（高置信度 + 可疑均可由用户显式选择删除）
@@ -370,6 +400,12 @@ pub fn delete(paths: &[String]) -> LeftoverDeleteReport {
     for p in paths {
         if !allowed.contains_key(&p.to_lowercase()) {
             skipped.push(format!("不在可删除名单（可能已不存在或评分变化）: {}", p));
+            continue;
+        }
+        // H1 防护：含可执行文件（.exe/.dll/.sys）的目录可能是仍可运行
+        // 的程序（只是注册表条目丢失/未卸载干净）——跳过并提示人工确认
+        if has_executables_shallow(Path::new(p)) {
+            skipped.push(format!("目录含可执行文件，可能仍是可运行程序，已跳过（请人工确认）: {}", p));
             continue;
         }
         match super::engine::safe_delete_dir(Path::new(p), &roots) {
