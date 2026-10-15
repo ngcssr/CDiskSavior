@@ -5,7 +5,6 @@ import { useAppStore } from "./store";
 import { MODULES } from "./modules";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { HardDriveDownload } from "lucide-react";
-import { SPRING_SNAPPY } from "./cds/ClaudeMotionPresets";
 
 export default function App() {
   const { active, setActive, theme } = useAppStore();
@@ -97,16 +96,18 @@ export default function App() {
         </div>
       </nav>
 
-      {/* 主区域 · 页面切换动效（CDS spring） */}
-      <main className="relative z-10 flex-1 overflow-y-auto">
+      {/* 主区域 · 页面切换纯淡入淡出（无位移防抖动）+ 滚动条空间预留 */}
+      <main
+        className="relative z-10 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
+      >
         <AnimatePresence mode="wait">
           {MODULES.filter((m) => m.id === active).map((m) => (
             <motion.div
               key={m.id}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={SPRING_SNAPPY}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.13, ease: "easeOut" }}
               className="h-full"
             >
               <ErrorBoundary>

@@ -346,11 +346,8 @@ export default function Insight() {
           tabs={["目录树", "热点", "增长", "大文件"]}
           value={String((["tree", "hotspot", "growth", "bigfile"] as const).indexOf(tab))}
           onChange={(_v, idx) => {
-            const id = (["tree", "hotspot", "growth", "bigfile"] as const)[idx];
-            setTab(id);
-            if (id === "hotspot" && !hotspot && !hotspotLoading) runHotspot();
-            if (id === "growth" && !growth && hasBaseline && !growthLoading) runGrowth();
-            if (id === "bigfile" && !bigfile && !bigfileLoading) runBigfile();
+            // 仅切视图，不自动扫描——各视图数据由用户点击对应按钮触发（懒加载）
+            setTab((["tree", "hotspot", "growth", "bigfile"] as const)[idx]);
           }}
           size="sm"
         />
@@ -439,6 +436,22 @@ export default function Insight() {
         {tab === "hotspot" && (
           <div>
             {hotspotLoading && <div className="pulse p-8 text-center text-sm text-[var(--color-text-secondary)]">正在扫描 AppData 大目录…</div>}
+            {!hotspot && !hotspotLoading && (
+              <div className="flex flex-col items-center justify-center py-24 text-center">
+                <RefreshCw size={40} className="mb-3 text-[var(--color-text-dim)]" />
+                <div className="text-sm font-medium">尚未扫描热点目录</div>
+                <div className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                  扫描桌面/下载/AppData 等热点，找出大目录
+                </div>
+                <button
+                  onClick={runHotspot}
+                  className="mt-4 flex items-center gap-1.5 rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--color-primary-strong)]"
+                >
+                  <RefreshCw size={14} />
+                  扫描热点
+                </button>
+              </div>
+            )}
             {hotspot && !hotspotLoading && (
               <>
                 <div className="mb-3 rounded-xl bg-[var(--color-surface-hover)] px-4 py-2 text-sm">

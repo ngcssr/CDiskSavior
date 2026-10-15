@@ -132,10 +132,8 @@ export function SegmentedControl({
               </span>
             )}
 
-            {/* 容器查询自适应文本：在宽度小于 254px 时自动收缩折叠 */}
-            <span className="truncate @[max-width:254px]:hidden">
-              {tab.label}
-            </span>
+            {/* 文字（不折叠：容器查询收缩在窄工具栏会误隐藏全部文字） */}
+            <span className="truncate">{tab.label}</span>
 
             {tab.badge !== undefined && (
               <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-neutral-200/60 dark:bg-neutral-700 text-[10px] font-mono leading-tight">
