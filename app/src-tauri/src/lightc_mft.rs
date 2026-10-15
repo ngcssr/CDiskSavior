@@ -171,7 +171,13 @@ pub fn enumerate_usn_records_v2(
             }
             offset += rlen;
         }
-        frn = unsafe { std::ptr::read_unaligned(buf.as_ptr() as *const u64) };
+        // FRN 前进校验：设备返回的"下一 FRN"若未前进（回落/为 0），
+        // 说明无法继续枚举，break 防死循环
+        let next_frn = unsafe { std::ptr::read_unaligned(buf.as_ptr() as *const u64) };
+        if next_frn == 0 || next_frn <= frn {
+            break;
+        }
+        frn = next_frn;
     }
     cb(processed);
     Ok(entries)
@@ -241,7 +247,7 @@ pub fn rebuild_paths_for_ids(
 
     for target_id in target_ids {
         let mut visiting = HashSet::new();
-        let _ = resolve_path(*target_id, &entry_by_id, &mut paths, &mut visiting);
+        let _ = resolve_path(*target_id, &entry_by_id, &mut paths, &mut visiting, 0);
     }
 
     paths
@@ -252,7 +258,13 @@ fn resolve_path(
     entry_by_id: &HashMap<u64, &MftEntry>,
     paths: &mut HashMap<u64, String>,
     visiting: &mut HashSet<u64>,
+    depth: u32,
 ) -> Option<String> {
+    // 深度上限：NTFS 路径最长约 32K 字符，病态/恶意父链可递归数千层
+    // 耗尽栈；超限直接放弃解析（该目录不入 paths，不影响其他）
+    if depth > 256 {
+        return None;
+    }
     if let Some(path) = paths.get(&mft_id) {
         return Some(path.clone());
     }
@@ -261,7 +273,7 @@ fn resolve_path(
     }
 
     let entry = entry_by_id.get(&mft_id)?;
-    let parent_path = resolve_path(entry.parent_id, entry_by_id, paths, visiting)?;
+    let parent_path = resolve_path(entry.parent_id, entry_by_id, paths, visiting, depth + 1)?;
     let mut full_path = String::with_capacity(parent_path.len() + 1 + entry.name.len());
     full_path.push_str(&parent_path);
     if !parent_path.ends_with('\\') {
@@ -834,6 +846,8 @@ pub fn scan_top_files(
     on_progress: &dyn Fn(&str, usize) -> bool,
 ) -> Result<Vec<(String, u64, i64)>, String> {
     let drive_letter = drive_letter.to_ascii_uppercase();
+    // 入口钳制：极大 top_n 会令候选池无界增长 → OOM
+    let top_n = top_n.clamp(1, 5000);
 
     // Step 1: USN 枚举
     let h_device = open_volume(drive_letter)?;

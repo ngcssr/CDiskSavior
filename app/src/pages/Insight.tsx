@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
+import { SegmentedControl } from "../cds/SegmentedControl";
 import { api_insight, api_settings, type LargeFileReport } from "../api/commands";
 import { listen } from "@tauri-apps/api/event";
 import { ChevronRight, RefreshCw, TrendingUp, FileWarning, FolderOpen, ExternalLink, X } from "lucide-react";
@@ -341,26 +342,18 @@ export default function Insight() {
         </div>
 
         {/* 视图切换 */}
-        <div className="flex gap-1 rounded-lg bg-[var(--color-surface-hover)] p-0.5">
-          {([["tree", "目录树"], ["hotspot", "热点"], ["growth", "增长"], ["bigfile", "大文件"]] as const).map(([id, label]) => (
-            <button
-              key={id}
-              onClick={() => {
-                setTab(id);
-                if (id === "hotspot" && !hotspot && !hotspotLoading) runHotspot();
-                if (id === "growth" && !growth && hasBaseline && !growthLoading) runGrowth();
-                if (id === "bigfile" && !bigfile && !bigfileLoading) runBigfile();
-              }}
-              className="rounded-md px-3 py-1 text-xs font-medium transition-all"
-              style={{
-                background: tab === id ? "var(--color-surface)" : "transparent",
-                color: tab === id ? "var(--color-primary)" : "var(--color-text-secondary)",
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          tabs={["目录树", "热点", "增长", "大文件"]}
+          value={String((["tree", "hotspot", "growth", "bigfile"] as const).indexOf(tab))}
+          onChange={(_v, idx) => {
+            const id = (["tree", "hotspot", "growth", "bigfile"] as const)[idx];
+            setTab(id);
+            if (id === "hotspot" && !hotspot && !hotspotLoading) runHotspot();
+            if (id === "growth" && !growth && hasBaseline && !growthLoading) runGrowth();
+            if (id === "bigfile" && !bigfile && !bigfileLoading) runBigfile();
+          }}
+          size="sm"
+        />
       </div>
 
       {/* 未提权警示：MFT 秒级路径全部不可用 */}

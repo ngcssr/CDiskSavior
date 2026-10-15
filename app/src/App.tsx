@@ -1,9 +1,11 @@
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore } from "./store";
 import { MODULES } from "./modules";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { HardDriveDownload } from "lucide-react";
+import { SPRING_SNAPPY } from "./cds/ClaudeMotionPresets";
 
 export default function App() {
   const { active, setActive, theme } = useAppStore();
@@ -91,19 +93,28 @@ export default function App() {
 
         {/* 底部版本 */}
         <div className="border-t border-[var(--color-line)] px-2 pt-3 text-[11px] text-[var(--color-text-dim)]">
-          v0.1.0 · Refined Industrial
+          v0.1.0 · C 盘救星
         </div>
       </nav>
 
-      {/* 主区域 */}
+      {/* 主区域 · 页面切换动效（CDS spring） */}
       <main className="relative z-10 flex-1 overflow-y-auto">
-        {MODULES.map((m) => (
-          <div key={m.id} className={active === m.id ? "block h-full" : "hidden"}>
-            <ErrorBoundary>
-              <m.page />
-            </ErrorBoundary>
-          </div>
-        ))}
+        <AnimatePresence mode="wait">
+          {MODULES.filter((m) => m.id === active).map((m) => (
+            <motion.div
+              key={m.id}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={SPRING_SNAPPY}
+              className="h-full"
+            >
+              <ErrorBoundary>
+                <m.page />
+              </ErrorBoundary>
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </main>
     </div>
   );

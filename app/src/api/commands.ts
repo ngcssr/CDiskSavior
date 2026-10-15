@@ -168,7 +168,6 @@ export const api_settings = {
   list_clearable_data_items: () => invoke<ClearableItem[]>("list_clearable_data_items"),
   clear_local_data: () => invoke<ClearLocalDataResult>("clear_local_data"),
   clear_selected_local_data: (keys: string[]) => invoke<ClearLocalDataResult>("clear_selected_local_data", { keys }),
-  migrate_legacy_portable_data: () => invoke<{ found: boolean; legacyDir?: string; imported: string[]; skipped: string[]; message?: string }>("migrate_legacy_portable_data"),
   get_distribution_channel: () => invoke<string>("get_distribution_channel"),
   open_logs_folder: () => invoke<void>("open_logs_folder"),
   pick_folder_dialog: (title: string) => invoke<string | null>("pick_folder_dialog", { title }),
@@ -178,7 +177,6 @@ export const api_settings = {
   reveal_in_folder: (p: string) => revealItemInDir(p),
   format_size: (bytes: number) => invoke<string>("format_size", { bytes }),
   get_physical_size: (p: string) => invoke<number>("get_physical_size", { path: p }),
-  verify_integrity: () => invoke<IntegrityReport>("verify_integrity"),
   scan_service_available: () => invoke<boolean>("scan_service_available"),
   repair_scan_service: () => invoke<void>("repair_scan_service"),
   open_apps_settings: () => invoke<void>("open_apps_settings"),
@@ -366,7 +364,6 @@ export type ClearableItem = {
 export type ClearLocalDataResult = {
   clearedItems: number; freed: number; errors: string[];
 };
-export type IntegrityReport = unknown;
 
 export type CleanupItem = {
   id: string; name: string; description: string; size: number;

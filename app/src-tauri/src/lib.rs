@@ -223,8 +223,6 @@ pub fn run() {
             commands::check_admin_privilege,
             commands::get_data_directory,
             commands::format_size,
-            commands::verify_integrity,
-            commands::migrate_legacy_portable_data,
             // M5 系统瘦身（P5 实现）
             slim_commands::get_system_slim_status,
             slim_commands::enable_hibernation,
@@ -258,7 +256,7 @@ pub fn run() {
         .on_page_load(|_webview, _payload| {
             startup_log("on_page_load");
         })
-        .setup(|app| {
+        .setup(|_app| {
             startup_log("setup enter (WebView created)");
             // R8: 单实例互斥（修复：句柄必须持有到进程退出，第二个实例直接 exit）
             match state::SingleInstance::new() {

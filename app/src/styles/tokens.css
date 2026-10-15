@@ -4,6 +4,13 @@
 
 @import "tailwindcss";
 
+/* CDS 组件库用的命名色（Tailwind 4 CSS-first 配置）：生成 bg-clay 等工具类 */
+@theme {
+  --color-clay: #d97757;
+  --color-clay-hover: #cc5a36;
+  --color-clay-light: #fbf3ef;
+}
+
 /* ============ 主题令牌 ============ */
 :root {
   /* 基础 · 深石墨（带极弱蓝调，非纯黑） */
