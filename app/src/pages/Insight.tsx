@@ -198,14 +198,16 @@ export default function Insight() {
   // 扫描进度（Tauri 事件）
   const [bigfileProgress, setBigfileProgress] = useState(0);
   const [growthProgress, setGrowthProgress] = useState(0);
+  const [scanProgress, setScanProgress] = useState<{ percent: number; phase: string } | null>(null);
 
   // 订阅后端进度事件
   useEffect(() => {
     const u1 = listen<{ scannedFiles: number }>("bigfiles:progress", (e) => {
       setBigfileProgress(e.payload.scannedFiles);
     });
-    const u2 = listen<{ filesScanned: number }>("disk-growth:progress", (e) => {
+    const u2 = listen<{ filesScanned: number; percent: number; phase: string }>("disk-growth:progress", (e) => {
       setGrowthProgress(e.payload.filesScanned);
+      setScanProgress({ percent: e.payload.percent, phase: e.payload.phase });
     });
     return () => {
       u1.then((f) => f());
@@ -216,6 +218,7 @@ export default function Insight() {
   const scan = useCallback(async (path: string, pushToStack: boolean, force = false) => {
     setLoading(true);
     setError(null);
+    setScanProgress({ percent: 0, phase: "正在扫描…" });
     try {
       const result = await api_insight.scan_drive(path, force);
       setTree(result);
@@ -373,7 +376,23 @@ export default function Insight() {
 
       {/* 内容区 */}
       <div className="flex-1 overflow-y-auto p-4">
-        {tab === "tree" && loading && <div className="text-center text-[var(--color-text-secondary)]">扫描中…</div>}
+        {tab === "tree" && loading && (
+          <div className="mb-4 rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-4">
+            <div className="mb-2 flex items-center justify-between text-xs text-[var(--color-text-secondary)]">
+              <span>{scanProgress?.phase ?? "正在扫描 MFT 文件表…"}</span>
+              <span className="tabular-nums">{scanProgress ? `${scanProgress.percent.toFixed(0)}%` : "…"}</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-[var(--color-surface-hover)]">
+              <div
+                className="h-full rounded-full bg-[var(--color-primary)] transition-all"
+                style={{ width: `${scanProgress?.percent ?? 0}%` }}
+              />
+            </div>
+            <div className="mt-2 text-center text-xs text-[var(--color-text-secondary)]">
+              首次扫描需解析整个文件表（HDD 约 20-30 秒），之后同会话内秒开
+            </div>
+          </div>
+        )}
         {error && <div className="mb-4 rounded-xl border border-[var(--color-danger)]/30 bg-[var(--color-danger-bg-soft)] px-4 py-3 text-sm text-[var(--color-danger-text)]">{error}</div>}
 
         {tab === "tree" && tree && !loading && (
