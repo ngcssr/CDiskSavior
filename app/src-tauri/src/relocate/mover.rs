@@ -472,9 +472,17 @@ impl MigrationTask {
                                     let locked = e.contains("(os error 32)")
                                         || e.contains("(os error 33)")
                                         || e.contains("(os error 5)");
-                                    if locked && attempt < 2 {
-                                        std::thread::sleep(std::time::Duration::from_millis(300));
-                                        continue;
+                                    if locked {
+                                        // 对齐源码 is_safe_to_skip_on_lock：
+                                        // Electron 应用 leveldb 的 LOCK 文件常被
+                                        // 占用，安全跳过（不影响软件运行）
+                                        if Self::is_safe_to_skip_on_lock(&sp) {
+                                            return Ok(());
+                                        }
+                                        if attempt < 2 {
+                                            std::thread::sleep(std::time::Duration::from_millis(300));
+                                            continue;
+                                        }
                                     }
                                     return Err(e);
                                 }
@@ -538,6 +546,20 @@ impl MigrationTask {
             }
         }
         std::fs::remove_dir_all(path)
+    }
+
+    /// 锁定文件是否可安全跳过（对齐源码 is_safe_to_skip_on_lock）：
+    /// 仅 Electron/Chromium 应用 leveldb 目录的 LOCK 文件——被占用时
+    /// 跳过不影响软件运行（应用会自行重建），其余锁定文件必须明示失败
+    fn is_safe_to_skip_on_lock(src_path: &Path) -> bool {
+        let Some(file_name) = src_path.file_name().and_then(|n| n.to_str()) else {
+            return false;
+        };
+        if file_name.eq_ignore_ascii_case("LOCK") {
+            let lower = src_path.to_string_lossy().to_lowercase();
+            return lower.contains("\\leveldb\\");
+        }
+        false
     }
 
     /// 分块复制单文件（1MB 块，对齐源码 copy_file_with_progress）：
