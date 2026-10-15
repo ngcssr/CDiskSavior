@@ -56,12 +56,17 @@ pub async fn scan_relocate_targets(app: AppHandle) -> Result<Vec<RelocateTarget>
                 if crate::lightc_mft::is_elevated() && crate::lightc_mft::mft_available(*letter) {
                     crate::scan_log(&format!("relocate-scan MFT build root={}", root));
                     // MFT 真实进度映射到 0-80% 区间
-                    crate::mft_scan::scan_mft(&root, |_, _, pct, phase| {
+                    let built = crate::mft_scan::scan_mft(&root, |_, _, pct, phase| {
                         emit(pct * 0.8, &format!("扫描 {} 盘 MFT: {}", letter, phase));
                     })
                     .ok()
                     .and_then(|t| serde_json::to_value(&t).ok())
-                    .and_then(|v| serde_json::from_value::<crate::scan::TreeNode>(v).ok())
+                    .and_then(|v| serde_json::from_value::<crate::scan::TreeNode>(v).ok());
+                    // 写入共享缓存：磁盘透视与空间腾挪复用，避免各自 24s 读盘解析
+                    if let Some(ref t) = built {
+                        crate::commands::cache_drive_tree(&root, t.clone());
+                    }
+                    built
                 } else {
                     None
                 }

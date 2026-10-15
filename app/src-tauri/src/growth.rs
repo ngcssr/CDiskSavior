@@ -23,7 +23,7 @@ struct MftDataCache {
 pub static MFT_SCAN_LOCK: Mutex<()> = Mutex::new(());
 static MFT_DATA_CACHE: Mutex<Option<MftDataCache>> = Mutex::new(None);
 
-const MFT_CACHE_TTL_SECS: u64 = 300;
+const MFT_CACHE_TTL_SECS: u64 = 1800;
 
 /// 获取（或复用）全盘 MFT 统计——热点/增长/大文件统一入口。
 /// 三级路径：① stats 缓存命中 → ② raw 缓存派生（TreeMap 已加载）→ ③ 加载解析。

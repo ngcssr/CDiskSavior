@@ -85,6 +85,13 @@ pub fn try_cached_tree(root: &str) -> Option<crate::scan::TreeNode> {
     None
 }
 
+/// 供空间腾挪扫描写入 MFT 树缓存（与磁盘透视共享，避免二次 24s 读盘解析）
+pub fn cache_drive_tree(root: &str, tree: crate::scan::TreeNode) {
+    if let Ok(mut guard) = DRIVE_TREE_CACHE.lock() {
+        *guard = Some((normalize_drive_key(root), tree));
+    }
+}
+
 #[tauri::command]
 pub async fn scan_drive(
     app: tauri::AppHandle,

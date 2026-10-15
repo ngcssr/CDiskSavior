@@ -266,15 +266,33 @@ pub fn run() {
                     // 关键：forget 持有互斥体直到进程退出。
                     // 此前 Ok(_) 直接 drop → 互斥体立刻释放 → 保护完全失效。
                     std::mem::forget(handle);
-                    Ok(())
                 }
                 Err(false) => {
                     // 已有实例在运行——立即退出本进程（否则双实例并行写状态）
                     eprintln!("CDisk Savior 已在运行中，第二实例退出");
                     std::process::exit(0);
                 }
-                Err(true) => Ok(()), // 创建失败，保守放行
+                Err(true) => {} // 创建失败，保守放行
             }
+
+            // 后台预热：静默解析 C 盘 MFT 并写共享缓存。用户首次打开
+            // 磁盘透视/空间腾挪时零卡顿（避免 24s 读盘阻塞 UI）。
+            // 延迟 5s 等 UI 就绪、避开启动 IO 争抢；与用户触发的扫描
+            // 由 scan_mft 内部 in-lock 双检串行化，不会更慢。
+            std::thread::spawn(|| {
+                std::thread::sleep(std::time::Duration::from_secs(5));
+                if crate::lightc_mft::is_elevated() && crate::lightc_mft::mft_available('C') {
+                    crate::scan_log("prewarm MFT start (background)");
+                    let _ = crate::mft_scan::scan_mft("C:\\", |_, _, _, _| {})
+                        .ok()
+                        .and_then(|t| serde_json::to_value(&t).ok())
+                        .and_then(|v| serde_json::from_value::<crate::scan::TreeNode>(v).ok())
+                        .map(|tree| crate::commands::cache_drive_tree("C:\\", tree));
+                    crate::scan_log("prewarm MFT done (background)");
+                }
+            });
+
+            Ok(())
         })
         .run(tauri::generate_context!())
         .expect("error while running cdisk-savior");
