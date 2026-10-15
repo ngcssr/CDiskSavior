@@ -22,21 +22,25 @@ export default function App() {
     >
       {/* 左侧导航 · 玻璃栏 */}
       <nav className="relative z-10 flex w-56 shrink-0 flex-col border-r border-[var(--color-line)] bg-[var(--color-bg-2)] px-3 py-4">
-        {/* Logo */}
-        <div className="mb-5 flex items-center gap-2.5 px-2">
+        {/* Logo · CDS 陶土品牌区 */}
+        <div className="mb-6 flex items-center gap-3 px-2 pt-1">
           <div
-            className="flex h-9 w-9 items-center justify-center rounded-xl"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px]"
             style={{
-              background: "linear-gradient(135deg, var(--color-primary), var(--color-primary-strong))",
-              boxShadow: "0 0 18px var(--color-primary-glow)",
-              color: "#06222a",
+              background: "linear-gradient(140deg, #e08264 0%, var(--color-primary) 45%, var(--color-primary-strong) 100%)",
+              boxShadow: "0 2px 10px rgba(217, 119, 87, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.12)",
+              color: "#ffffff",
             }}
           >
-            <HardDriveDownload size={19} strokeWidth={2.2} />
+            <HardDriveDownload size={20} strokeWidth={2} />
           </div>
           <div className="leading-tight">
-            <div className="font-display text-[14px] font-bold tracking-tight">CDisk Savior</div>
-            <div className="text-[11px] text-[var(--color-text-dim)]">磁盘与内存维护助手</div>
+            <div className="font-display text-[15px] font-bold" style={{ letterSpacing: "-0.02em" }}>
+              CDisk <span style={{ color: "var(--color-primary)" }}>Savior</span>
+            </div>
+            <div className="mt-0.5 text-[11px]" style={{ color: "var(--color-text-dim)", letterSpacing: "0.04em" }}>
+              磁盘与内存维护助手
+            </div>
           </div>
         </div>
 
