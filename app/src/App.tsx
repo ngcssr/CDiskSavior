@@ -1,6 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { useAppStore } from "./store";
 import { MODULES } from "./modules";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -8,12 +8,24 @@ import { HardDriveDownload } from "lucide-react";
 
 export default function App() {
   const { active, setActive, theme } = useAppStore();
+  // 首次激活才渲染（懒加载：未访问的模块不执行 useEffect），
+  // 访问过则常驻挂载（保留扫描结果，切走再切回不丢状态）
+  const [visited, setVisited] = useState<Set<string>>(() => new Set([active]));
 
   // 就绪信号：通知 Rust 前端已挂载（Rust 侧记录日志；窗口已默认
   // 可见，Rust 的 show 为幂等 no-op）。启动页已移除（用户指定）。
   useEffect(() => {
     invoke("window_ready").catch(() => {});
   }, []);
+
+  useEffect(() => {
+    setVisited((v) => {
+      if (v.has(active)) return v;
+      const n = new Set(v);
+      n.add(active);
+      return n;
+    });
+  }, [active]);
 
   return (
     <div
@@ -96,26 +108,29 @@ export default function App() {
         </div>
       </nav>
 
-      {/* 主区域 · 页面切换纯淡入淡出（无位移防抖动）+ 滚动条空间预留 */}
+      {/* 主区域 · 首次激活才渲染、之后常驻挂载；display 切换 + 淡入淡出 */}
       <main
         className="relative z-10 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
       >
-        <AnimatePresence mode="wait">
-          {MODULES.filter((m) => m.id === active).map((m) => (
+        {MODULES.map((m) => {
+          const show = active === m.id;
+          const mounted = visited.has(m.id);
+          return (
             <motion.div
               key={m.id}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+              className={show ? "block h-full" : "hidden"}
+              initial={false}
+              animate={{ opacity: show ? 1 : 0 }}
               transition={{ duration: 0.13, ease: "easeOut" }}
-              className="h-full"
             >
-              <ErrorBoundary>
-                <m.page />
-              </ErrorBoundary>
+              {mounted ? (
+                <ErrorBoundary>
+                  <m.page />
+                </ErrorBoundary>
+              ) : null}
             </motion.div>
-          ))}
-        </AnimatePresence>
+          );
+        })}
       </main>
     </div>
   );
