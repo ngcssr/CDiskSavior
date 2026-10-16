@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { motion } from "framer-motion";
 import { useAppStore } from "./store";
 import { MODULES } from "./modules";
@@ -12,8 +13,47 @@ export default function App() {
   // 首次激活才渲染（懒加载：未访问的模块不执行 useEffect），
   // 访问过则常驻挂载（保留扫描结果，切走再切回不丢状态）
   const [visited, setVisited] = useState<Set<string>>(() => new Set([active]));
+  // 普通更新（弹窗：是/否/跳过此版本）
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   // 强制更新拦截（本地版本低于 minimum_version 时全屏阻止使用）
   const [forceUpdate, setForceUpdate] = useState<UpdateInfo | null>(null);
+  // 下载状态
+  const [downloading, setDownloading] = useState(false);
+  const [downloadPct, setDownloadPct] = useState(0);
+
+  // 检查更新：去重（同一版本只提示一次）+ 跳过版本 + force 拦截
+  const checkUpdate = useCallback(async () => {
+    try {
+      const info = await api_settings.check_update();
+      if (!info.has_update) return;
+      const skipped = localStorage.getItem("skip_version") === String(info.latest_version);
+      if (info.force) {
+        setForceUpdate(info);
+      } else if (!skipped) {
+        setUpdateInfo(info);
+      }
+    } catch {}
+  }, []);
+
+  // 下载并应用更新（优先自动下载，无 download_url 则引导手动下载）
+  const doUpdate = useCallback(async (info: UpdateInfo) => {
+    if (!info.download_url) {
+      if (info.url) api_settings.open_file(info.url).catch(() => {});
+      return;
+    }
+    setDownloading(true);
+    setDownloadPct(0);
+    try {
+      const r = await api_settings.download_update(info.download_url, info.sha256 || "");
+      if (r.ok) {
+        await api_settings.apply_update(r.path);
+        return;
+      }
+      // 校验失败：回退引导手动下载
+      if (info.url) api_settings.open_file(info.url).catch(() => {});
+    } catch {}
+    setDownloading(false);
+  }, []);
 
   // 就绪信号：通知 Rust 前端已挂载（Rust 侧记录日志；窗口已默认
   // 可见，Rust 的 show 为幂等 no-op）。启动页已移除（用户指定）。
@@ -21,11 +61,19 @@ export default function App() {
     invoke("window_ready").catch(() => {});
   }, []);
 
-  // 启动后台检测更新（不阻塞；仅 force 时拦截，普通更新不打扰）
+  // 启动 5 秒后检测一次 + 每 1 小时周期检测（后台，不阻塞界面）
   useEffect(() => {
-    api_settings.check_update().then((info) => {
-      if (info.force) setForceUpdate(info);
-    }).catch(() => {});
+    const t = setTimeout(() => checkUpdate(), 5000);
+    const iv = setInterval(() => checkUpdate(), 3600_000);
+    return () => { clearTimeout(t); clearInterval(iv); };
+  }, [checkUpdate]);
+
+  // 监听下载进度事件
+  useEffect(() => {
+    const un = listen<{ percent: number }>("update:download-progress", (e) => {
+      setDownloadPct(e.payload.percent);
+    });
+    return () => { un.then((f) => f()); };
   }, []);
 
   useEffect(() => {
@@ -143,9 +191,69 @@ export default function App() {
         })}
       </main>
 
+      {/* 普通更新弹窗（是 / 稍后 / 跳过此版本） */}
+      {updateInfo && !forceUpdate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-bg)]/60 backdrop-blur-sm">
+          <div className="mx-6 w-full max-w-md rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] p-6 shadow-2xl">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: "var(--color-primary-soft)", color: "var(--color-primary)" }}>
+                <HardDriveDownload size={20} />
+              </div>
+              <div>
+                <h2 className="text-base font-bold">发现新版本 v{updateInfo.latest_version}</h2>
+                <div className="text-xs text-[var(--color-text-secondary)]">当前 v{updateInfo.current_version}</div>
+              </div>
+            </div>
+
+            {updateInfo.notes && (
+              <div className="mt-3 max-h-40 overflow-y-auto rounded-lg bg-[var(--color-bg-2)] px-3 py-2 text-sm whitespace-pre-wrap">
+                {updateInfo.notes}
+              </div>
+            )}
+
+            {downloading && (
+              <div className="mt-3">
+                <div className="mb-1 flex justify-between text-xs text-[var(--color-text-secondary)]">
+                  <span>正在下载更新…</span>
+                  <span className="tabular-nums">{downloadPct}%</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-[var(--color-surface-hover)]">
+                  <div className="h-full rounded-full bg-[var(--color-primary)] transition-all" style={{ width: `${downloadPct}%` }} />
+                </div>
+              </div>
+            )}
+
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                onClick={() => { localStorage.setItem("skip_version", String(updateInfo.latest_version)); setUpdateInfo(null); }}
+                disabled={downloading}
+                className="rounded-lg px-3 py-2 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] disabled:opacity-50"
+              >
+                跳过此版本
+              </button>
+              <button
+                onClick={() => setUpdateInfo(null)}
+                disabled={downloading}
+                className="rounded-lg px-4 py-2 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] disabled:opacity-50"
+              >
+                稍后
+              </button>
+              <button
+                onClick={() => doUpdate(updateInfo)}
+                disabled={downloading}
+                className="flex items-center gap-2 rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                <Download size={15} />
+                {downloading ? "下载中…" : "立即更新"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 强制更新全屏拦截（本地版本低于 minimum_version，不可跳过） */}
       {forceUpdate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-bg)]/80 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-bg)]/85 backdrop-blur-sm">
           <div className="mx-6 w-full max-w-md rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] p-8 text-center shadow-2xl">
             <HardDriveDownload size={40} className="mx-auto mb-4 text-[var(--color-primary)]" />
             <h2 className="text-lg font-bold">需要更新才能继续使用</h2>
@@ -156,14 +264,25 @@ export default function App() {
             {forceUpdate.notes && (
               <p className="mt-2 rounded-lg bg-[var(--color-primary-soft)] px-3 py-2 text-xs">{forceUpdate.notes}</p>
             )}
+            {downloading && (
+              <div className="mt-3">
+                <div className="mb-1 flex justify-between text-xs text-[var(--color-text-secondary)]">
+                  <span>正在下载更新…</span>
+                  <span className="tabular-nums">{downloadPct}%</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-[var(--color-surface-hover)]">
+                  <div className="h-full rounded-full bg-[var(--color-primary)] transition-all" style={{ width: `${downloadPct}%` }} />
+                </div>
+              </div>
+            )}
             <button
-              onClick={() => api_settings.open_file(forceUpdate.url).catch(() => {})}
-              className="mt-6 inline-flex items-center gap-2 rounded-lg bg-[var(--color-primary)] px-6 py-2.5 text-sm font-semibold text-white"
+              onClick={() => doUpdate(forceUpdate)}
+              disabled={downloading}
+              className="mt-6 inline-flex items-center gap-2 rounded-lg bg-[var(--color-primary)] px-6 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
             >
               <Download size={16} />
-              前往下载更新
+              {downloading ? "下载中…" : "立即更新"}
             </button>
-            <div className="mt-3 text-xs text-[var(--color-text-dim)]">下载并替换后重新启动即可</div>
           </div>
         </div>
       )}

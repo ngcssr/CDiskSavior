@@ -227,6 +227,8 @@ pub fn run() {
             // 联网更新检测（GitHub Releases）
             update::get_current_version,
             update::check_update,
+            update::download_update,
+            update::apply_update,
             // M5 系统瘦身（P5 实现）
             slim_commands::get_system_slim_status,
             slim_commands::enable_hibernation,

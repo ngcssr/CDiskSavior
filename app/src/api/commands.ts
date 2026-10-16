@@ -164,7 +164,16 @@ export type UpdateInfo = {
   current_version: number;
   force: boolean;
   url: string;
+  download_url: string;
+  sha256: string;
   notes: string;
+};
+
+export type DownloadResult = {
+  ok: boolean;
+  path: string;
+  sha256_ok: boolean;
+  error: string | null;
 };
 
 export const api_settings = {
@@ -192,6 +201,8 @@ export const api_settings = {
   set_always_on_top: (v: boolean) => invoke<void>("set_always_on_top", { value: v }),
   get_current_version: () => invoke<number>("get_current_version"),
   check_update: () => invoke<UpdateInfo>("check_update"),
+  download_update: (url: string, sha256: string) => invoke<DownloadResult>("download_update", { url, sha256 }),
+  apply_update: (path: string) => invoke<void>("apply_update", { newPath: path }),
 };
 
 export const api: Record<ModuleId, Record<string, (...a: any[]) => any>> = {

@@ -37,6 +37,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }  # Q4
 ntfs-reader = "=0.4.5"                                      # MFT 直读引擎（disk-butler 同版；0.4.7 起 Mft 字段私有化无法外部构造）
 windows-service = "0.8"                                     # SCM 服务框架
 ureq = { version = "2", default-features = false, features = ["native-tls"] }  # 联网更新检测（Windows 走 schannel，无额外加密库）
+sha2 = "0.10"                                             # 更新包 SHA256 校验
 rayon = "1"                                                 # MFT 记录并行解析
 walkdir = "2"                                               # 目录遍历
 jwalk = "0.8"                                                # P3: 并行目录扫描（TreeMap）
