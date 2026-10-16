@@ -158,6 +158,15 @@ export const api_advanced = {
 };
 
 // ============ M8 设置与工具（22） ============
+export type UpdateInfo = {
+  has_update: boolean;
+  latest_version: number;
+  current_version: number;
+  force: boolean;
+  url: string;
+  notes: string;
+};
+
 export const api_settings = {
   check_admin_privilege: () => invoke<boolean>("check_admin_privilege"),
   check_admin_for_path: (p: string) => invoke<boolean>("check_admin_for_path", { path: p }),
@@ -181,6 +190,8 @@ export const api_settings = {
   repair_scan_service: () => invoke<void>("repair_scan_service"),
   open_apps_settings: () => invoke<void>("open_apps_settings"),
   set_always_on_top: (v: boolean) => invoke<void>("set_always_on_top", { value: v }),
+  get_current_version: () => invoke<number>("get_current_version"),
+  check_update: () => invoke<UpdateInfo>("check_update"),
 };
 
 export const api: Record<ModuleId, Record<string, (...a: any[]) => any>> = {

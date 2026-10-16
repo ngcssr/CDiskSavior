@@ -4,18 +4,28 @@ import { motion } from "framer-motion";
 import { useAppStore } from "./store";
 import { MODULES } from "./modules";
 import ErrorBoundary from "./components/ErrorBoundary";
-import { HardDriveDownload } from "lucide-react";
+import { api_settings, type UpdateInfo } from "./api/commands";
+import { HardDriveDownload, Download } from "lucide-react";
 
 export default function App() {
   const { active, setActive, theme } = useAppStore();
   // 首次激活才渲染（懒加载：未访问的模块不执行 useEffect），
   // 访问过则常驻挂载（保留扫描结果，切走再切回不丢状态）
   const [visited, setVisited] = useState<Set<string>>(() => new Set([active]));
+  // 强制更新拦截（本地版本低于 minimum_version 时全屏阻止使用）
+  const [forceUpdate, setForceUpdate] = useState<UpdateInfo | null>(null);
 
   // 就绪信号：通知 Rust 前端已挂载（Rust 侧记录日志；窗口已默认
   // 可见，Rust 的 show 为幂等 no-op）。启动页已移除（用户指定）。
   useEffect(() => {
     invoke("window_ready").catch(() => {});
+  }, []);
+
+  // 启动后台检测更新（不阻塞；仅 force 时拦截，普通更新不打扰）
+  useEffect(() => {
+    api_settings.check_update().then((info) => {
+      if (info.force) setForceUpdate(info);
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -132,6 +142,31 @@ export default function App() {
           );
         })}
       </main>
+
+      {/* 强制更新全屏拦截（本地版本低于 minimum_version，不可跳过） */}
+      {forceUpdate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-bg)]/80 backdrop-blur-sm">
+          <div className="mx-6 w-full max-w-md rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] p-8 text-center shadow-2xl">
+            <HardDriveDownload size={40} className="mx-auto mb-4 text-[var(--color-primary)]" />
+            <h2 className="text-lg font-bold">需要更新才能继续使用</h2>
+            <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
+              当前版本 v{forceUpdate.current_version} 过低，存在安全或兼容性问题，
+              必须升级到 v{forceUpdate.latest_version}。
+            </p>
+            {forceUpdate.notes && (
+              <p className="mt-2 rounded-lg bg-[var(--color-primary-soft)] px-3 py-2 text-xs">{forceUpdate.notes}</p>
+            )}
+            <button
+              onClick={() => api_settings.open_file(forceUpdate.url).catch(() => {})}
+              className="mt-6 inline-flex items-center gap-2 rounded-lg bg-[var(--color-primary)] px-6 py-2.5 text-sm font-semibold text-white"
+            >
+              <Download size={16} />
+              前往下载更新
+            </button>
+            <div className="mt-3 text-xs text-[var(--color-text-dim)]">下载并替换后重新启动即可</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

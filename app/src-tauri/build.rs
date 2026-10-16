@@ -1,4 +1,15 @@
 fn main() {
+    // 注入 git 提交序号作为应用版本号（与发布产物命名 v{N}-{hash} 一致，§14 版本化）
+    // 编译时读取，联网更新检测用它比较 latest.json 的 version 字段
+    let git_count = std::process::Command::new("git")
+        .args(["rev-list", "--count", "HEAD"])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| "0".to_string());
+    println!("cargo:rustc-env=GIT_VERSION={}", git_count);
+
     // R9/V20：自定义应用清单（longPathAware + PerMonitorV2 + Common Controls v6），
     // 走 tauri-build 的 WindowsAttributes::app_manifest 通道
     // （embed-manifest 会与 tauri 内嵌清单资源冲突；Attributes::app_manifest 是 ACL 用的）

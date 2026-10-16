@@ -26,6 +26,7 @@ mod state;
 pub mod svc;
 pub mod svc_client;
 mod tune;
+mod update;
 
 // P1 骨架 + P2 M4 空间腾挪命令
 
@@ -223,6 +224,9 @@ pub fn run() {
             commands::check_admin_privilege,
             commands::get_data_directory,
             commands::format_size,
+            // 联网更新检测（GitHub Releases）
+            update::get_current_version,
+            update::check_update,
             // M5 系统瘦身（P5 实现）
             slim_commands::get_system_slim_status,
             slim_commands::enable_hibernation,
