@@ -70,12 +70,11 @@ export function SegmentedControl({
 
   return (
     <div
-      className={`relative rounded-full select-none flex items-stretch p-[2px] transition-colors ${
+      className={`relative rounded-full select-none flex items-stretch p-[2px] transition-colors shrink-0 min-w-max ${
         isSmall ? "h-7 text-xs" : "h-9 text-xs"
       } ${className}`}
       style={{
         backgroundColor: "var(--cds-segmented-track, rgba(0, 0, 0, 0.06))",
-        containerType: "inline-size",
       }}
       role="tablist"
     >
@@ -103,7 +102,7 @@ export function SegmentedControl({
             role="tab"
             aria-selected={isActive}
             onClick={() => handleSelect(idx)}
-            className={`relative z-10 flex-1 h-full flex items-center justify-center gap-1.5 px-3 rounded-full transition-colors truncate font-[470] ${
+            className={`relative z-10 flex-1 h-full flex items-center justify-center gap-1.5 px-3 rounded-full transition-colors whitespace-nowrap font-[470] ${
               isActive
                 ? "text-neutral-900 dark:text-white font-semibold"
                 : "text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-300"
