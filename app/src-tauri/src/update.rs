@@ -25,9 +25,9 @@ fn current_version() -> u32 {
     env!("GIT_VERSION").parse().unwrap_or(0)
 }
 
-/// 更新清单地址 —— 改成你的 GitHub 仓库（raw 或 releases 直链 latest.json）
+/// 更新清单地址（GitHub 仓库 ngcssr/CDiskSavior 的 main 分支 latest.json）
 const UPDATE_MANIFEST_URL: &str =
-    "https://raw.githubusercontent.com/OWNER/REPO/main/latest.json";
+    "https://raw.githubusercontent.com/ngcssr/CDiskSavior/main/latest.json";
 
 const MANIFEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 const DOWNLOAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(600);
